@@ -2,7 +2,7 @@
 
 已在 GL.iNet GL-MG1300、OpenWrt 22.03.4、Baiwang QDC507（DJI 一代 4G）上安装并测试。
 
-![GL-MG1300 与 DJI 一代 4G 模块](docs/mg1300-dji-4g.png)
+<img src="docs/mg1300-dji-4g.png" alt="GL-MG1300 与 DJI 一代 4G 模块" width="420">
 
 设备实拍：GL-MG1300 与 DJI 一代 4G 模块。照片经背景清理与亮度调整，仅用于展示硬件外观。
 
