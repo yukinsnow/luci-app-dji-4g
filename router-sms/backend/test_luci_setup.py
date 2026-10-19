@@ -5,6 +5,21 @@ import router_setup as setup
 
 class LuCITests(unittest.TestCase):
     def setUp(self): api.CONFIG = dict(modem='0', enable_voice=True)
+    def test_own_number_persist_and_clear_without_modem_or_token_change(self):
+        api.CONFIG.update(token='a'*64, hardware_profile='mg1300-dji-gen1')
+        with patch('router_setup.save_config') as save, patch('router_api.mm') as mm:
+            self.assertEqual(api.dispatch('GET','/v1/settings/number',{}), {'own_number': ''})
+            self.assertEqual(api.dispatch('POST','/v1/settings/number',{'own_number':' +8613800000000 '})['own_number'], '+8613800000000')
+            self.assertEqual(save.call_args[0][0]['token'], 'a'*64)
+            self.assertEqual(api.dispatch('GET','/v1/settings/number',{})['own_number'], '+8613800000000')
+            api.dispatch('POST','/v1/settings/number',{'own_number':''})
+            self.assertEqual(api.CONFIG['own_number'], '')
+            mm.assert_not_called()
+    def test_own_number_invalid_never_persists(self):
+        with patch('router_setup.save_config') as save:
+            for value in [None, 123, True, '12', '1;reboot', '1'*21, '+', '１２３']:
+                with self.assertRaises(api.ApiError): api.dispatch('POST','/v1/settings/number',{'own_number':value})
+            save.assert_not_called()
     def test_delete_requires_modem_ownership(self):
         with patch('router_api.listed', return_value=[]), patch('router_api.mm') as mm:
             with self.assertRaises(api.ApiError) as error: api.dispatch('POST','/v1/sms/delete',{'id':'12'})

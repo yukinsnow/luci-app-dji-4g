@@ -17,6 +17,7 @@ GL.iNet 的 80 端口是厂商管理页；已测试固件的原生 LuCI 在 8080
 - 按号码分组的短信会话、搜索、分页读取、回复、新建短信、逐条删除。
 - 模块信息、信号、LTE/注册状态。
 - 实验电话：拨号、呼叫状态、接听、挂断。当前设备已验证外呼接通和挂断；不提供浏览器麦克风/扬声器音频。
+- 手动设置本机号码：路由器持久保存，LuCI 与安卓端共用；可清空，不修改 SIM 或改变实际发信号码。
 - 设置：MG1300 / DJI 一代设备检测、一键绑定和持久化、实验电话开关。
 - 使用 LuCI 登录会话与专用 rpcd ACL，不要求填写 API Token，不将 Token 发给浏览器；只读权限不包含发送、删除、拨号或配置操作。
 - 本地资源，无 CDN、云服务或第三方网页脚本；适配桌面与手机宽度。
@@ -25,8 +26,8 @@ GL.iNet 的 80 端口是厂商管理页；已测试固件的原生 LuCI 在 8080
 
 交付包含两个 IPK：
 
-- `router-sms-api_0.3.0-3_all.ipk`：Python/ModemManager 后端、绑定辅助脚本、开机与 USB 热插拔集成。
-- `luci-app-router-sms_0.1.0-3_all.ipk`：LuCI 页面、菜单、最小范围 rpcd ACL 与固定方法桥接。
+- `router-sms-api_0.3.1-1_all.ipk`：Python/ModemManager 后端、绑定辅助脚本、开机与 USB 热插拔集成。
+- `luci-app-router-sms_0.2.0-1_all.ipk`：LuCI 页面、菜单、最小范围 rpcd ACL 与固定方法桥接。
 
 安装包不含私人密码、API Token、电话号码或这台机器的 SSH 公钥。新安装会在本机生成随机 Token；覆盖已有后端时保留 Token 和电话设置。
 
@@ -37,7 +38,7 @@ GL.iNet 的 80 端口是厂商管理页；已测试固件的原生 LuCI 在 8080
 ```sh
 df -h /overlay
 opkg update
-opkg install /tmp/router-sms-api_0.3.0-3_all.ipk /tmp/luci-app-router-sms_0.1.0-3_all.ipk
+opkg install /tmp/router-sms-api_0.3.1-1_all.ipk /tmp/luci-app-router-sms_0.2.0-1_all.ipk
 ```
 
 也可通过 LuCI“系统 → 软件包”先上传安装后端 IPK，再安装 LuCI IPK。依赖来自路由器当前包源，不需要编译工具或 Android SDK。rpcd 重载后如菜单未更新，重新登录并强制刷新浏览器。
@@ -80,7 +81,7 @@ opkg remove luci-app-router-sms
 
 ## 验证
 
-- 后端 16 项测试通过：短信归属/删除参数、分页、鉴权、参数注入、防重复拨号、错误机型/接口/多模块拒绝、仅启用 disabled 状态模块等。
+- 后端 18 项测试通过：短信归属/删除参数、分页、鉴权、参数注入、防重复拨号、错误机型/接口/多模块拒绝、仅启用 disabled 状态模块等。
 - 实际安装了两个 IPK，验证 rpcd 对象与各查询方法。
 - 匿名 HTTP ubus 请求被拒绝。
 - 已登录的真实 LuCI 页面通过无头 Chrome 验证：菜单、短信入口、发送对话框、电话页、设备检测、适配确认框、390px 手机宽度、无 JavaScript 错误。
@@ -105,6 +106,32 @@ LuCI 登录会话 → 专用 ubus/rpcd ACL → 本机 Token 桥接 → Python AP
 
 ## 仓库范围
 
-本仓库发布 LuCI 插件和配套后端，不包含 Android 项目、个人 SSH 主机密钥、短信或实际配置。使用 MIT 许可证。
+本仓库发布 LuCI 插件、配套后端和 Compose Miuix 安卓客户端源码，不包含个人 SSH 主机密钥、短信或实际配置。使用 MIT 许可证。
 
 ![设置界面](docs/settings.png)
+
+
+## 安卓客户端 v0.3.0
+
+从 [Releases](https://github.com/yukinsnow/luci-app-dji-4g/releases/latest) 下载 `RouterSMS-v0.3.0.apk`，支持 Android 8.0（API 26）以上。先安装本次配套后端 `router-sms-api_0.3.1-1_all.ipk`，再安装或升级 APK。APK 为本地 debug 签名构建，适合侧载测试；GitHub Actions 产物使用临时调试签名，覆盖安装请持续使用 Releases 中的本地签名版本。签名不同需先卸载，并重新登录。
+
+连接路由器 Wi-Fi，首次点击“检测路由器身份”，与可信 SSH 客户端显示的 SHA256 指纹核对并确认，再用 root 和 SSH 密码登录。之后严格检查已保存的主机密钥，SSH 自动读取后端 Token，密码不保存。当前后端和客户端支持默认 LAN 地址 192.168.8.1；不支持自定义地址。设备指纹变化时请先核实重置/换机原因，再重新检测确认。
+
+本机号码位于底部“连接”页，输入后点击“保存本机号码”；LuCI 位于“设置 → 本机号码”。两端手动刷新可读取最新值，空值保存即清除。不会从截图或短信推断号码，也不会自动写入测试号码。配置存储在 `/etc/router-sms.json` 的 `own_number` 字段，读写均需鉴权。
+
+源码构建（JDK 17、Android SDK 35、Gradle 8.9）：
+
+```sh
+cd android
+./gradlew assembleDebug lintDebug testDebugUnitTest
+```
+
+Windows 使用 `gradlew.bat`。APK 位于 `android/app/build/outputs/apk/debug/`。第三方许可见 [Android 第三方说明](android/THIRD-PARTY.md) 和 `android/licenses/`。
+
+## 界面截图与隐私
+
+Android 下图为真实模拟器渲染的脱敏示例数据，号码和验证码已替换为圆点，不含真实短信；为拍摄仅在本地专用副本关闭截图保护，此副本 APK 不发布。正式 APK 保留 FLAG_SECURE。LuCI 设置截图来自真实页面，号码输入框在拍摄前模糊处理。
+
+<img src="docs/android-sms.png" alt="Android 短信会话，脱敏示例" width="280"> <img src="docs/android-number.png" alt="Android 本机号码设置，脱敏示例" width="280">
+
+<img src="docs/luci-number.png" alt="LuCI 本机号码设置，号码模糊处理" width="720">

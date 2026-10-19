@@ -11,3 +11,7 @@ local.properties
 *.jks
 node_modules/
 work/
+.gradle/
+.kotlin/
+**/build/
+*.apk

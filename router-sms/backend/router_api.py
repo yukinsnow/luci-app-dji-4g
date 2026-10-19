@@ -83,6 +83,19 @@ def active_calls():
     return [p for p in listed('Call') if mm('-o', p, structured=True).get('call', {}).get('properties', {}).get('state') != 'terminated']
 
 def dispatch(method, path, body):
+    # Local label only: independent of modem discovery and SIM provisioning.
+    if path == '/v1/settings/number':
+        if method == 'GET': return {'own_number': CONFIG.get('own_number', '')}
+        if method == 'POST':
+            value = body.get('own_number')
+            if not isinstance(value, str): raise ApiError(400, 'own_number must be a string')
+            value = value.strip()
+            if value: number(value)
+            import router_setup
+            updated = dict(CONFIG, own_number=value)
+            router_setup.save_config(updated)
+            CONFIG.update(updated)
+            return {'ok': True, 'own_number': value}
     if path.startswith('/v1/device/'):
         import router_setup
         if method == 'GET' and path == '/v1/device/status': return router_setup.inspect(CONFIG)
@@ -99,7 +112,7 @@ def dispatch(method, path, body):
         try: CONFIG['modem'] = router_setup.resolve_modem()
         except RuntimeError as e: raise ApiError(409, str(e))
     if method == 'GET' and path == '/v1/status':
-        return {'modem': mm('-m', CONFIG['modem'], structured=True), 'voice': voice()}
+        return {'modem': mm('-m', CONFIG['modem'], structured=True), 'voice': voice(), 'own_number': CONFIG.get('own_number', '')}
     if method == 'GET' and path == '/v1/sms':
         ids = listed('SMS')
         if body.get('order') == 'newest': ids.reverse()

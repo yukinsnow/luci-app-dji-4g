@@ -10,7 +10,8 @@ var api = {
     status: method('status'), messages: method('messages', ['offset']), calls: method('calls'),
     send: method('send', ['number', 'text']), remove: method('delete', ['id']),
     dial: method('dial', ['number']), accept: method('accept', ['id']), hangup: method('hangup', ['id']),
-    device: method('device_status'), setup: method('device_setup'), voice: method('set_voice', ['enabled'])
+    device: method('device_status'), setup: method('device_setup'), voice: method('set_voice', ['enabled']),
+    settings: method('settings'), number: method('set_number', ['own_number'])
 };
 function unwrap(reply) {
     if (!reply || reply.ok !== true) throw new Error(reply && reply.error || '短信服务未响应，请检查服务是否运行');
@@ -29,11 +30,12 @@ function sms(raw) {
 
 return view.extend({
     handleSave: null, handleSaveApply: null, handleReset: null,
-    load: function() { return Promise.all([soft(api.status()), soft(api.messages(0)), soft(api.device())]); },
+    load: function() { return Promise.all([soft(api.status()), soft(api.messages(0)), soft(api.device()), soft(api.settings())]); },
     render: function(data) {
         this.tab = 'sms'; this.items = []; this.selected = null; this.search = ''; this.next = null; this.busy = false;
         this.writable = L.hasViewPermission ? L.hasViewPermission() : true;
         this.device = data[2].value || null; this.status = data[0].value || null;
+        this.ownNumber = (data[3].value || {}).own_number || ''; this.numberDraft = this.ownNumber;
         if (data[1].value) this.mergeMessages(data[1].value, true);
         this.error = data.filter(function(d) { return d.error; }).map(function(d) { return d.error; }).join('；');
         this.page = E('div', { 'class': 'rs-app' }); this.draw();
@@ -62,7 +64,9 @@ return view.extend({
         var self = this;
         if (this.tab === 'sms') return this.execute(function() { return api.messages(0); }, function(r) { self.mergeMessages(r, true); self.error = ''; });
         if (this.tab === 'calls') return this.execute(function() { return api.calls(); }, function(r) { self.calls = r; self.error = ''; });
-        if (this.tab === 'settings') return this.execute(function() { return api.device(); }, function(r) { self.device = r; self.error = ''; });
+        if (this.tab === 'settings') return this.execute(function() { return Promise.all([api.device(), api.settings()]).then(function(r) {
+            return {ok: true, data: {device: unwrap(r[0]), settings: unwrap(r[1])}};
+        }); }, function(r) { self.device = r.device; self.ownNumber = r.settings.own_number || ''; self.numberDraft = self.ownNumber; self.error = ''; });
         return this.execute(function() { return api.status(); }, function(r) { self.status = r; self.error = ''; });
     },
     ask: function(title, description, task, done) {
@@ -197,7 +201,16 @@ return view.extend({
         }, 'primary', true)]));
         var applyButton = details[details.length - 1].querySelectorAll('button')[1]; if (!d.compatible) applyButton.disabled = true;
         var toggle = E('input', { 'type': 'checkbox', 'class': 'rs-checkbox', 'checked': enabled ? '' : null, 'disabled': this.busy || !this.writable ? '' : null, 'aria-label': '实验电话控制' });
-        return E('div', {}, [card(details), card([E('h3', {}, '实验电话控制'), E('label', { 'class': 'rs-check' }, [toggle, E('span', {}, '启用拨号、接听和挂断（无音频）')]),
+        var own = E('input', { 'type': 'tel', 'class': 'rs-input', 'value': this.numberDraft, 'maxlength': 21,
+            'aria-label': '本机号码', 'placeholder': '输入 SIM 卡号码，可留空', 'disabled': this.busy || !this.writable ? '' : null });
+        own.addEventListener('input', function() { self.numberDraft = own.value; });
+        var numberCard = card([E('h3', {}, '本机号码'), own,
+            hint('手动备注 SIM 卡号码，保存在路由器并与安卓端共用。不会修改 SIM 或改变发送号码；留空保存可清除。'),
+            this.button('保存本机号码', function() { var value = own.value.trim();
+                if (value && !/^\+?[0-9]{3,20}$/.test(value)) { self.notify('请输入 3–20 位数字，可用 + 开头', true); return; }
+                self.execute(function() { return api.number(value); }, function(r) { self.ownNumber = r.own_number; self.numberDraft = r.own_number; self.notify('本机号码已保存'); });
+            }, 'primary', true)]);
+        return E('div', {}, [numberCard, card(details), card([E('h3', {}, '实验电话控制'), E('label', { 'class': 'rs-check' }, [toggle, E('span', {}, '启用拨号、接听和挂断（无音频）')]),
             hint('开启时检测 ModemManager Voice 接口。接口可用不保证所有固件、SIM 或运营商都能实际通话。'),
             this.button('保存电话设置', function() { var value = toggle.checked; self.ask('保存电话设置', value ? '启用实验电话控制？拨号可能产生话费，浏览器无法听说。' : '关闭电话控制？',
                 function() { return api.voice(value); }, function() { if (self.device) self.device.voice_enabled = value; self.notify('电话设置已保存。'); }); }, 'primary', true)]),

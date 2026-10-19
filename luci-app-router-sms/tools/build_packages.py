@@ -65,7 +65,7 @@ prerm='''#!/bin/sh
 /etc/init.d/router-sms-bind disable
 exit 0
 '''
-package('router-sms-api','0.3.0-3','python3-light, python3-urllib, python3-codecs, python3-logging, python3-email, python3-openssl, modemmanager, kmod-usb-serial-option',files,{'postinst':postinst,'prerm':prerm})
+package('router-sms-api','0.3.1-1','python3-light, python3-urllib, python3-codecs, python3-logging, python3-email, python3-openssl, modemmanager, kmod-usb-serial-option',files,{'postinst':postinst,'prerm':prerm})
 files={}
 for p in (APP/'root').rglob('*'):
     if p.is_file():
@@ -83,7 +83,7 @@ rm -f /tmp/luci-indexcache*
 /etc/init.d/rpcd reload
 exit 0
 '''
-package('luci-app-router-sms','0.1.0-3','luci-base, rpcd, router-sms-api (>= 0.3.0-3)',files,{'postinst':postinst,'postrm':postrm})
+package('luci-app-router-sms','0.2.0-1','luci-base, rpcd, router-sms-api (>= 0.3.1-1)',files,{'postinst':postinst,'postrm':postrm})
 
 (OUT/'SHA256SUMS.txt').write_text(''.join(
     hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n'
