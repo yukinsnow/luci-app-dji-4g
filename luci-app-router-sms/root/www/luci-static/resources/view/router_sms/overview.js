@@ -33,13 +33,33 @@ return view.extend({
     load: function() { return Promise.all([soft(api.status()), soft(api.messages(0)), soft(api.device()), soft(api.settings())]); },
     render: function(data) {
         this.tab = 'sms'; this.items = []; this.selected = null; this.search = ''; this.next = null; this.busy = false;
+        this.multi = false; this.checked = {};
+        this.callClocks = {}; this.callPolling = false;
         this.writable = L.hasViewPermission ? L.hasViewPermission() : true;
         this.device = data[2].value || null; this.status = data[0].value || null;
         this.ownNumber = (data[3].value || {}).own_number || ''; this.numberDraft = this.ownNumber;
         if (data[1].value) this.mergeMessages(data[1].value, true);
         this.error = data.filter(function(d) { return d.error; }).map(function(d) { return d.error; }).join('；');
         this.page = E('div', { 'class': 'rs-app' }); this.draw();
-        return E('div', {}, [E('link', { 'rel': 'stylesheet', 'href': L.resource('router-sms.css') + '?v=0.2.1' }), this.page]);
+        var self = this, ticks = 0;
+        this.callTimer = setInterval(function() {
+            if (!self.page.isConnected) { clearInterval(self.callTimer); return; }
+            if (self.tab !== 'calls' || document.hidden) return;
+            self.page.querySelectorAll('[data-call-duration]').forEach(function(e) { e.textContent = self.callDuration(e.getAttribute('data-call-duration')); });
+            if (++ticks % 2 || self.busy || self.callPolling) return;
+            self.callPolling = true;
+            var previous = JSON.stringify(self.calls);
+            api.calls().then(unwrap).then(function(r) {
+                if (self.busy || self.tab !== 'calls' || !self.page.isConnected || JSON.stringify(self.calls) !== previous) return;
+                var hadError = !!self.callPollError;
+                self.applyCalls(r); if (JSON.stringify(r) !== previous || hadError) self.draw();
+            }).catch(function() {
+                if (!self.callPollError && self.page.isConnected && self.tab === 'calls') {
+                    self.callPollError = '呼叫状态更新失败，请手动刷新核对。'; self.draw();
+                }
+            }).finally(function() { self.callPolling = false; });
+        }, 1000);
+        return E('div', {}, [E('link', { 'rel': 'stylesheet', 'href': L.resource('router-sms.css') + '?v=0.3.0' }), this.page]);
     },
     button: function(label, action, kind, write) {
         return E('button', { 'type': 'button', 'class': 'rs-button ' + (kind || ''),
@@ -63,7 +83,7 @@ return view.extend({
     refresh: function() {
         var self = this;
         if (this.tab === 'sms') return this.execute(function() { return api.messages(0); }, function(r) { self.mergeMessages(r, true); self.error = ''; });
-        if (this.tab === 'calls') return this.execute(function() { return api.calls(); }, function(r) { self.calls = r; self.error = ''; });
+        if (this.tab === 'calls') return this.execute(function() { return api.calls(); }, function(r) { self.applyCalls(r); self.error = ''; });
         if (this.tab === 'settings') return this.execute(function() { return Promise.all([api.device(), api.settings()]).then(function(r) {
             return {ok: true, data: {device: unwrap(r[0]), settings: unwrap(r[1])}};
         }); }, function(r) { self.device = r.device; self.ownNumber = r.settings.own_number || ''; self.numberDraft = self.ownNumber; self.error = ''; });
@@ -76,12 +96,44 @@ return view.extend({
                 this.button('取消', ui.hideModal), this.button('确认', function() { ui.hideModal(); return self.execute(task, done); }, 'primary', true)
             ])]);
     },
+    deleteMessages: function(ids) {
+        var self = this;
+        if (!ids.length || ids.length > 100) { this.notify('请选择 1–100 条短信', true); return; }
+        this.ask('删除短信', '将从路由器模块永久删除选中的 ' + ids.length + ' 条短信，两端都会消失，无法恢复。', function() {
+            var deleted = [], failure = '', chain = Promise.resolve();
+            ids.forEach(function(id) { chain = chain.then(function() {
+                if (failure) return;
+                return api.remove(id).then(unwrap).then(function(r) { if (!r.ok) throw new Error('删除未确认'); deleted.push(id); })
+                    .catch(function(e) { failure = e.message || '删除未完成'; });
+            }); });
+            return chain.then(function() { return {ok:true, data:{deleted:deleted, error:failure}}; });
+        }, function(r) {
+            self.items = self.items.filter(function(m) { return r.deleted.indexOf(m.id) < 0; });
+            r.deleted.forEach(function(id) { delete self.checked[id]; });
+            self.notify(r.error ? '已删除 ' + r.deleted.length + ' 条，' + (ids.length - r.deleted.length) + ' 条未确认删除；请先刷新核对，再选择剩余短信。' : '已删除 ' + r.deleted.length + ' 条短信', !!r.error);
+        });
+    },
+    applyCalls: function(value) {
+        var self = this, now = performance.now();
+        (value.details || []).forEach(function(c) {
+            var state = (((c.data || {}).call || {}).properties || {}).state, clock = self.callClocks[c.id];
+            if ((state === 'active' || state === 'held') && (!clock || clock.end != null)) self.callClocks[c.id] = {start:now};
+            else if (state === 'terminated' && clock && clock.end == null) clock.end = now;
+        });
+        this.calls = value;
+        this.callPollError = '';
+    },
+    callDuration: function(id) {
+        var clock = this.callClocks[id], seconds = clock ? Math.max(0, Math.floor(((clock.end == null ? performance.now() : clock.end) - clock.start) / 1000)) : 0;
+        function pad(n) { return String(n).padStart(2,'0'); }
+        return (seconds >= 3600 ? pad(Math.floor(seconds/3600)) + ':' : '') + pad(Math.floor(seconds/60)%60) + ':' + pad(seconds%60);
+    },
     draw: function() {
         if (!this.page) return;
         this.page.replaceChildren();
         var self = this, tabs = [['sms', '短信会话'], ['calls', '电话'], ['status', '模块状态'], ['settings', '设置']];
         this.page.appendChild(E('header', { 'class': 'rs-header' }, [E('div', {}, [E('h2', {}, '短信与电话'),
-            hint('MG1300 × DJI 一代 4G · v0.2.1')]), E('div', { 'class': 'rs-actions' }, [
+            hint('MG1300 × DJI 一代 4G · v0.3.0')]), E('div', { 'class': 'rs-actions' }, [
             this.button('本机号码', function() { self.tab = 'settings'; self.draw(); return self.refresh().then(function() {
                 var input = self.page.querySelector('[aria-label="本机号码"]'); if (input) { input.scrollIntoView({block:'center'}); input.focus(); }
             }); }),
@@ -111,7 +163,8 @@ return view.extend({
             keys.forEach(function(n) {
                 var messages = groups[n].slice().sort(function(a,b) { return Number(b.id) - Number(a.id); });
                 list.appendChild(E('button', { 'type': 'button', 'class': 'rs-thread' + (self.selected === n ? ' active' : ''),
-                    'click': function() { self.selected = n; self.draw(); } }, [E('strong', {}, n), E('span', { 'class': 'rs-count' }, messages.length + ' 条'),
+                    'disabled': self.busy ? '' : null,
+                    'click': function() { if (self.selected !== n) { self.multi = false; self.checked = {}; } self.selected = n; self.draw(); } }, [E('strong', {}, n), E('span', { 'class': 'rs-count' }, messages.length + ' 条'),
                     E('span', { 'class': 'rs-preview' }, messages[0].text || '非文本短信')]));
             });
         };
@@ -124,14 +177,27 @@ return view.extend({
         if (!this.selected) right = card([E('div', { 'class': 'rs-empty' }, [E('h3', {}, '消息，近在手边'), hint('选择左侧会话阅读，或新建一条短信。')])]);
         else {
             var thread = this.items.filter(L.bind(function(m) { return m.number === this.selected; }, this)).sort(function(a,b) { return Number(a.id) - Number(b.id); });
-            right = card([E('div', { 'class': 'rs-row' }, [E('h3', {}, this.selected), this.button('回复', function() { self.compose(self.selected); }, 'primary', true)]),
-                E('div', { 'class': 'rs-messages' }, thread.map(function(m) { return E('article', { 'class': 'rs-message' + (m.outgoing ? ' outgoing' : '') }, [
+            var chosen = thread.filter(function(m) { return self.checked[m.id]; }).map(function(m) { return m.id; });
+            var actions = [this.button('回复', function() { self.compose(self.selected); }, 'primary', true),
+                this.button(this.multi ? '取消多选' : '多选', function() { self.multi = !self.multi; self.checked = {}; self.draw(); }, '', true)];
+            if (this.multi) {
+                actions.push(this.button('全选当前已加载', function() { self.checked = {}; thread.slice(0,100).forEach(function(m) { self.checked[m.id] = true; }); self.draw(); }, '', true));
+                var removeSelected = this.button('删除所选 (' + chosen.length + ')', function() { self.deleteMessages(chosen); }, 'danger', true);
+                if (!chosen.length) removeSelected.disabled = true;
+                actions.push(removeSelected);
+            }
+            right = card([E('div', { 'class': 'rs-row' }, [E('h3', {}, this.selected), E('div', {'class':'rs-actions'}, actions)]),
+                hint(this.multi ? '已选 ' + chosen.length + ' 条 · 每次最多 100 条，仅选择当前会话已加载的短信' : '每条短信末尾均可删除；支持多选后统一确认。'),
+                E('div', { 'class': 'rs-messages' }, thread.map(function(m) {
+                    var select = E('input', {type:'checkbox', 'class':'rs-checkbox', 'aria-label':'选择短信 ' + m.id,
+                        checked:self.checked[m.id] ? '' : null, disabled:self.busy || !self.writable || (!self.checked[m.id] && chosen.length >= 100) ? '' : null});
+                    select.addEventListener('change', function() { if (select.checked) self.checked[m.id] = true; else delete self.checked[m.id]; self.draw(); });
+                    return E('article', { 'class': 'rs-message' + (m.outgoing ? ' outgoing' : '') }, [
+                    self.multi ? E('label', {'class':'rs-check'}, [select, E('span',{},'选择此短信')]) : E('span'),
                     E('div', { 'class': 'rs-body' }, m.text || '非文本短信'), E('div', { 'class': 'rs-meta' }, [
-                        E('span', {}, (m.outgoing ? '发出' : '收到') + ' · ' + (m.time || '时间未知') + ' · ' + states(m.state)),
-                        self.button('删除', function() { self.ask('删除短信', '将从模块永久删除这条短信，无法恢复。', function() { return api.remove(m.id); }, function() {
-                            self.items = self.items.filter(function(s) { return s.id !== m.id; }); self.notify('短信已删除');
-                        }); }, 'danger', true)
-                    ])]); }))]);
+                        E('span', {}, (m.outgoing ? '发出' : '收到') + ' · ' + (m.time || '时间未知') + ' · ' + states(m.state))]),
+                    E('div', {'class':'rs-delete-row'}, [self.button('删除短信', function() { self.deleteMessages([m.id]); }, 'danger', true)])
+                    ]); }))]);
         }
         return E('div', {}, [E('div', { 'class': 'rs-grid' }, [left, right]), hint('分页读取模块保留的短信；如需查看更早消息，请加载更多。')]);
     },
@@ -153,32 +219,36 @@ return view.extend({
         var self = this, v = this.calls || this.status && this.status.voice || {}, details = v.details || [];
         var enabled = v.controls_enabled === true;
         var live = details.some(function(c) { return ((c.data || {}).call || {}).properties && c.data.call.properties.state !== 'terminated'; });
-        var number = E('input', { 'type': 'tel', 'class': 'rs-input', 'placeholder': '输入要拨打的号码', 'aria-label': '拨号号码', 'disabled': !enabled || live ? '' : null });
+        if (live) details = details.filter(function(c) { return (((c.data || {}).call || {}).properties || {}).state !== 'terminated'; });
+        var number = E('input', { 'type': 'tel', 'class': 'rs-input', 'value':this.dialNumber || '', 'placeholder': '输入要拨打的号码', 'aria-label': '拨号号码', 'disabled': !enabled || live ? '' : null });
+        number.addEventListener('input', function() { self.dialNumber = number.value; });
         var dial = card([E('h3', {}, '电话控制'), E('span', { 'class': 'rs-badge' + (!enabled ? ' rs-warning' : '') }, enabled ? '电话控制已启用' : '电话控制关闭'),
             E('div', { 'class': 'rs-help' }, '仅控制拨号、接听和挂断。当前未找到模块音频通路，浏览器不能听说通话。勿用于紧急电话。'),
             number, this.button('拨号', function() {
                 var n = number.value.trim();
                 if (!enabled || live) return;
                 if (!/^\+?[0-9]{3,20}$/.test(n)) { self.notify('请输入有效的电话号码', true); return; }
-                self.ask('确认拨号', '向 ' + n + ' 发起呼叫？可能产生话费。浏览器没有通话音频。', function() { return api.dial(n); }, function() { self.notify('呼叫已提交，请刷新查看状态。'); });
-            }, 'primary', true), hint(enabled ? '操作后点击刷新查看当前呼叫。' : '可在“设置”中启用实验电话控制。')]);
+                self.ask('确认拨号', '向 ' + n + ' 发起呼叫？可能产生话费。浏览器没有通话音频。', function() { return api.dial(n); }, function() { self.refresh(); });
+            }, 'call-dial', true), hint(enabled ? '自动刷新呼叫状态；时长从本页首次检测到接通开始计时。' : '可在“设置”中启用实验电话控制。')]);
         // The control must remain visibly disabled as well as protected by backend ACL/gates.
         var dialButton = dial.querySelector('button'); if (!enabled || live) dialButton.disabled = true;
         var cards = [dial, E('div', { 'class': 'rs-section' }, '当前呼叫')];
+        if (this.callPollError) cards.push(card([hint(this.callPollError)]));
         if (!details.length) cards.push(card([hint('当前没有呼叫。')]));
         details.forEach(function(call) {
             var p = ((call.data || {}).call || {}).properties || {}, ended = p.state === 'terminated';
             var row = [E('h3', {}, p.number || '未知号码'), E('div', { 'class': 'rs-call-state' }, states(p.state)),
                 kv('方向', p.direction === 'outgoing' ? '呼出' : '呼入'), kv('音频', '未提供浏览器音频')];
+            if (self.callClocks[call.id]) row.splice(2,0,E('div', {}, [E('div', {'class':'rs-call-duration','data-call-duration':call.id},self.callDuration(call.id)), hint('从本页首次检测到接通开始计时')]));
             if (enabled && !ended) {
                 var buttons = [];
                 if (p.state === 'ringing-in') buttons.push(self.button('接听', function() { self.ask('接听呼叫', '接听此呼叫？浏览器没有音频通道。', function() { return api.accept(call.id); }, function() { self.notify('已提交接听操作，请刷新。'); }); }, 'primary', true));
-                buttons.push(self.button('挂断', function() { self.ask('挂断呼叫', '确认结束这个呼叫？', function() { return api.hangup(call.id); }, function() { self.notify('已提交挂断操作，请刷新。'); }); }, 'danger', true));
+                buttons.push(self.button('挂断', function() { self.ask('挂断呼叫', '确认结束这个呼叫？', function() { return api.hangup(call.id); }, function() { self.refresh(); }); }, 'call-hangup', true));
                 row.push(E('div', { 'class': 'rs-actions' }, buttons));
             }
             cards.push(card(row));
         });
-        return E('div', {}, cards);
+        return E('div', {'class':'rs-phone'}, live ? cards.slice(1) : cards);
     },
     statusPage: function() {
         var modem = this.status && this.status.modem && this.status.modem.modem || {}, g = modem.generic || {}, p = modem['3gpp'] || {};

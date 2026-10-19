@@ -81,6 +81,8 @@ private val green = Color(0xFF20A477)
 @Composable fun RouterApp(vm: RouterViewModel) {
     var tab by remember { mutableIntStateOf(0) }
     var recipient by remember { mutableStateOf<String?>(null) }
+    var selecting by remember(recipient) { mutableStateOf(false) }
+    var selectedSms by remember(recipient) { mutableStateOf<Set<String>>(emptySet()) }
     var composing by remember { mutableStateOf(false) }
     var draftNumber by remember { mutableStateOf("") }
     var draftText by remember { mutableStateOf("") }
@@ -150,8 +152,30 @@ private val green = Color(0xFF20A477)
                 item { Hint("已提交不等于已送达。发送超时请先刷新会话，避免重复发送。") }
             } else if (recipient != null) {
                 val thread = vm.messages.filter { it.number == recipient }.sortedWith(compareBy<Sms> { it.time }.thenBy { it.id.toIntOrNull() ?: 0 })
-                item { Hint("${thread.size} 条短信 · 保存在路由器中") }
+                val chosen = thread.filter { it.id in selectedSms }.map { it.id }
+                item {
+                    Hint("${thread.size} 条短信 · 保存在路由器中")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Action(if (selecting) "取消多选" else "多选", enabled = !vm.busy) { selecting = !selecting; selectedSms = emptySet() }
+                        if (selecting) {
+                            Action("全选", enabled = !vm.busy) { selectedSms = thread.take(100).map { it.id }.toSet() }
+                            Action("删除(${chosen.size})", enabled = !vm.busy && chosen.isNotEmpty()) {
+                                val ids = chosen.toList()
+                                confirm = "永久删除选中的 ${ids.size} 条短信？删除后两端都会消失，无法恢复。" to { vm.deleteMessages(ids) }
+                            }
+                        }
+                    }
+                    if (selecting) Hint("已选 ${chosen.size} 条 · 每次最多 100 条，仅选择当前会话")
+                }
                 items(thread, key = { it.id }) { sms ->
+                    if (selecting) Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = sms.id in selectedSms, enabled = !vm.busy && (sms.id in selectedSms || chosen.size < 100),
+                            onCheckedChange = { checked -> selectedSms = if (checked) selectedSms + sms.id else selectedSms - sms.id })
+                        Hint("选择此短信", Modifier.padding(start = 10.dp))
+                    }
+                    SwipeSmsDelete(sms.id, !vm.busy && !selecting, onDelete = {
+                        confirm = "从路由器模块永久删除这条短信？删除后两端都会消失，无法恢复。" to { vm.deleteSms(sms.id) }
+                    }) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (sms.outgoing) Arrangement.End else Arrangement.Start) {
                         Card(modifier = Modifier.fillMaxWidth(.92f), color = if (sms.outgoing) MiuixTheme.colorScheme.tertiaryContainer else MiuixTheme.colorScheme.surface,
                             insideMargin = PaddingValues(18.dp), cornerRadius = 24.dp) {
@@ -160,7 +184,9 @@ private val green = Color(0xFF20A477)
                             Hint("${if (sms.outgoing) "发出" else "收到"} · ${sms.time.ifEmpty { "时间未知" }} · ${sms.state}")
                         }
                     }
+                    }
                 }
+                item { Hint("对单条短信左滑可显示删除按钮；点击后还需确认。") }
                 item { Action("回复短信", true, !vm.busy, Modifier.fillMaxWidth()) { draftNumber = recipient!!; composing = true } }
             } else when(tab) {
                 0 -> {
@@ -222,7 +248,7 @@ private val green = Color(0xFF20A477)
                             confirm = "退出后需要重新输入路由器密码。是否继续？" to { vm.logout() }
                         }
                     }
-                    Spacer(Modifier.height(18.dp)); Hint("路由器短信 0.3.1\nCompose Miuix · 本地设备管理")
+                    Spacer(Modifier.height(18.dp)); Hint("路由器短信 0.4.0\nCompose Miuix · 本地设备管理")
                 }
             }
             if (vm.busy) item { Hint("正在与路由器通信，请稍候…", Modifier.padding(6.dp)) }
@@ -335,52 +361,83 @@ private val green = Color(0xFF20A477)
 }
 @Composable private fun PhonePane(vm: RouterViewModel, confirm: (String, () -> Unit) -> Unit) {
     var number by remember { mutableStateOf("") }
+    var now by remember { mutableLongStateOf(android.os.SystemClock.elapsedRealtime()) }
+    val lifecycle = (androidx.activity.compose.LocalActivity.current as? ComponentActivity)?.lifecycle
+    LaunchedEffect(vm.connected) {
+        while (vm.connected) {
+            if (lifecycle?.currentState?.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED) != false) vm.pollCalls()
+            kotlinx.coroutines.delay(2000)
+        }
+    }
+    LaunchedEffect(Unit) {
+        while (true) { kotlinx.coroutines.delay(1000); now = android.os.SystemClock.elapsedRealtime() }
+    }
     val result = vm.calls
     val enabled = result?.optBoolean("controls_enabled") ?: vm.voiceEnabled
     val details = result?.optJSONArray("details")
-    val live = details != null && (0 until details.length()).any {
-        details.getJSONObject(it).optJSONObject("data")?.optJSONObject("call")?.optJSONObject("properties")?.optString("state") != "terminated"
-    }
+    val all = if (details == null) emptyList() else (0 until details.length()).map { details.getJSONObject(it) }
+    fun properties(call: JSONObject) = call.optJSONObject("data")?.optJSONObject("call")?.optJSONObject("properties") ?: JSONObject()
+    val live = all.firstOrNull { properties(it).optString("state") != "terminated" }
+    val props = live?.let { properties(it) }
+    val state = props?.optString("state") ?: ""
+    val liveId = live?.optString("id") ?: ""
+    val connected = state in listOf("active", "held")
+    val incoming = state == "ringing-in"
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Panel(compact = true) {
-            Text(if (enabled) "实验电话控制" else "电话控制未启用", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-            Hint("仅控制呼叫，不提供手机通话音频。拨号需后端启用。")
-            Text(number.ifEmpty { "输入要拨打的号码" }, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+            Text(if (live != null) props?.optString("number", "未知号码") ?: "未知号码" else number.ifEmpty { "输入要拨打的号码" },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2,
-                fontSize = if (number.length > 14) 22.sp else if (number.isEmpty()) 20.sp else 30.sp,
-                color = if (number.isEmpty()) MiuixTheme.colorScheme.onSurfaceVariantSummary else MiuixTheme.colorScheme.onSurface)
-            listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("+", "0", "删除")).forEach { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    row.forEach { key ->
-                        TextButton(text = key, enabled = enabled && !vm.busy && !live,
-                            onClick = { number = dialerInput(number, key) },
-                            modifier = Modifier.weight(1f).height(52.dp), cornerRadius = 26.dp)
+                fontSize = if (live == null && number.isEmpty()) 20.sp else 28.sp)
+            if (live != null) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 18.dp), contentAlignment = Alignment.Center) {
+                    RoundSymbol(Icons.Outlined.Phone, green)
+                }
+                Text(when(state) { "active" -> "通话中"; "held" -> "已保持"; "dialing" -> "正在拨号"; "ringing-out" -> "对方振铃"; "ringing-in" -> "来电"; else -> "呼叫进行中" },
+                    modifier = Modifier.fillMaxWidth(), textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 20.sp)
+                if (connected) {
+                    Text(callDuration(vm.callTimings[liveId], now), modifier = Modifier.fillMaxWidth(),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center, fontSize = 32.sp,
+                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                    Hint("从本次检测到接通开始计时", Modifier.align(Alignment.CenterHorizontally))
+                }
+                Spacer(Modifier.height(16.dp))
+                if (incoming) TextButton(text = "接听", enabled = enabled && !vm.busy,
+                    colors = ButtonDefaults.textButtonColors(color = green, textColor = Color.White),
+                    modifier = Modifier.fillMaxWidth().height(58.dp), cornerRadius = 29.dp,
+                    onClick = { confirm("接听当前来电？此 App 不提供音频。") { vm.call("accept", id = liveId) } })
+                TextButton(text = if (incoming) "拒接" else "挂断", enabled = enabled && !vm.busy,
+                    colors = ButtonDefaults.textButtonColors(color = Color(0xFFE5484D), textColor = Color.White),
+                    modifier = Modifier.fillMaxWidth().height(64.dp), cornerRadius = 32.dp,
+                    onClick = { confirm("挂断当前呼叫？") { vm.call("hangup", id = liveId) } })
+            } else {
+                listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("+", "0", "删除")).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        row.forEach { key ->
+                            TextButton(text = key, enabled = enabled && !vm.busy,
+                                onClick = { number = dialerInput(number, key) },
+                                modifier = Modifier.weight(1f).height(52.dp), cornerRadius = 26.dp)
+                        }
                     }
                 }
+                TextButton(text = "拨打电话", enabled = enabled && !vm.busy && number.matches(Regex("\\+?[0-9]{3,20}")),
+                    colors = ButtonDefaults.textButtonColors(color = green, textColor = Color.White),
+                    modifier = Modifier.fillMaxWidth().height(58.dp), cornerRadius = 29.dp,
+                    onClick = {
+                        val target = number
+                        confirm("向 $target 发起呼叫？可能产生费用。没有通话音频，勿用于紧急电话。") { vm.call("dial", target) }
+                    })
             }
-            Action(if (live) "呼叫进行中" else "拨打电话", true, enabled && !vm.busy && !live && number.matches(Regex("\\+?[0-9]{3,20}")), Modifier.fillMaxWidth()) {
-                val target = number
-                confirm("向 $target 发起实验呼叫？可能产生费用。没有通话音频，勿用于紧急电话。") { vm.call("dial", target) }
-            }
+            Hint(if (enabled) "仅控制呼叫，手机不提供通话音频。" else "电话控制未启用，请在 LuCI 中启用实验电话控制。")
+            vm.callPollError?.let { Hint(it) }
         }
-        Section("当前呼叫")
-        if (details == null || details.length() == 0) Panel { Hint(if (vm.busy) "正在查询…" else "当前没有呼叫") }
-        else for (i in 0 until details.length()) {
-            val call = details.getJSONObject(i)
-            val props = call.optJSONObject("data")?.optJSONObject("call")?.optJSONObject("properties") ?: JSONObject()
-            val id = call.getString("id")
+        val ended = all.filter { properties(it).optString("state") == "terminated" }
+        if (ended.isNotEmpty()) Section("已结束的呼叫")
+        ended.forEach { call ->
             Panel {
-                Text(props.optString("number", "未知号码"), fontSize = 19.sp, fontWeight = FontWeight.Medium)
-                InfoRow("状态", props.optString("state", "—"))
-                InfoRow("方向", props.optString("direction", "—"))
-                if (enabled) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    if (props.optString("state") == "ringing-in") Action("接听", true, !vm.busy, Modifier.weight(1f)) {
-                        confirm("接听此呼叫？App 无法传输音频。") { vm.call("accept", id = id) }
-                    }
-                    Action("挂断", enabled = !vm.busy, modifier = Modifier.weight(1f)) {
-                        confirm("挂断此呼叫？") { vm.call("hangup", id = id) }
-                    }
-                }
+                InfoRow("号码", properties(call).optString("number", "未知号码"))
+                InfoRow("状态", "已结束")
+                vm.callTimings[call.optString("id")]?.let { InfoRow("本次观察时长", callDuration(it, now)) }
             }
         }
     }

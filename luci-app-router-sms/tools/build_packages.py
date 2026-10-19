@@ -83,7 +83,7 @@ rm -f /tmp/luci-indexcache*
 /etc/init.d/rpcd reload
 exit 0
 '''
-package('luci-app-router-sms','0.2.1-1','luci-base, rpcd, router-sms-api (>= 0.3.1-1)',files,{'postinst':postinst,'postrm':postrm})
+package('luci-app-router-sms','0.3.0-1','luci-base, rpcd, router-sms-api (>= 0.3.1-1)',files,{'postinst':postinst,'postrm':postrm})
 
 (OUT/'SHA256SUMS.txt').write_text(''.join(
     hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n'

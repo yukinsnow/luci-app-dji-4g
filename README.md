@@ -27,7 +27,7 @@ GL.iNet 的 80 端口是厂商管理页；已测试固件的原生 LuCI 在 8080
 交付包含两个 IPK：
 
 - `router-sms-api_0.3.1-1_all.ipk`：Python/ModemManager 后端、绑定辅助脚本、开机与 USB 热插拔集成。
-- `luci-app-router-sms_0.2.1-1_all.ipk`：LuCI 页面、菜单、最小范围 rpcd ACL 与固定方法桥接。
+- `luci-app-router-sms_0.3.0-1_all.ipk`：LuCI 页面、菜单、最小范围 rpcd ACL 与固定方法桥接。
 
 安装包不含私人密码、API Token、电话号码或这台机器的 SSH 公钥。新安装会在本机生成随机 Token；覆盖已有后端时保留 Token 和电话设置。
 
@@ -38,7 +38,7 @@ GL.iNet 的 80 端口是厂商管理页；已测试固件的原生 LuCI 在 8080
 ```sh
 df -h /overlay
 opkg update
-opkg install /tmp/router-sms-api_0.3.1-1_all.ipk /tmp/luci-app-router-sms_0.2.1-1_all.ipk
+opkg install /tmp/router-sms-api_0.3.1-1_all.ipk /tmp/luci-app-router-sms_0.3.0-1_all.ipk
 ```
 
 也可通过 LuCI“系统 → 软件包”先上传安装后端 IPK，再安装 LuCI IPK。依赖来自路由器当前包源，不需要编译工具或 Android SDK。rpcd 重载后如菜单未更新，重新登录并强制刷新浏览器。
@@ -111,9 +111,9 @@ LuCI 登录会话 → 专用 ubus/rpcd ACL → 本机 Token 桥接 → Python AP
 ![设置界面](docs/settings.png)
 
 
-## 安卓客户端 v0.3.1
+## 安卓客户端 v0.4.0
 
-从 [Releases](https://github.com/yukinsnow/luci-app-dji-4g/releases/latest) 下载 `RouterSMS-v0.3.1.apk`，支持 Android 8.0（API 26）以上。先安装本次配套后端 `router-sms-api_0.3.1-1_all.ipk`，再安装或升级 APK。APK 为本地 debug 签名构建，适合侧载测试；GitHub Actions 产物使用临时调试签名，覆盖安装请持续使用 Releases 中的本地签名版本。签名不同需先卸载，并重新登录。
+从 [Releases](https://github.com/yukinsnow/luci-app-dji-4g/releases/latest) 下载 `RouterSMS-v0.4.0.apk`，支持 Android 8.0（API 26）以上。先安装本次配套后端 `router-sms-api_0.3.1-1_all.ipk`，再安装或升级 APK。APK 为本地 debug 签名构建，适合侧载测试；GitHub Actions 产物使用临时调试签名，覆盖安装请持续使用 Releases 中的本地签名版本。签名不同需先卸载，并重新登录。
 
 连接路由器 Wi-Fi，首次点击“检测路由器身份”，与可信 SSH 客户端显示的 SHA256 指纹核对并确认，再用 root 和 SSH 密码登录。之后严格检查已保存的主机密钥，SSH 自动读取后端 Token，密码不保存。当前后端和客户端支持默认 LAN 地址 192.168.8.1；不支持自定义地址。设备指纹变化时请先核实重置/换机原因，再重新检测确认。
 
@@ -148,3 +148,20 @@ Android v0.3.1 电话页使用数字拨号盘（数字、+、删除），保留�
 <img src="docs/android-dialer.png" alt="Android 数字拨号盘，无私人号码" width="280"> <img src="docs/luci-mobile.png" alt="窄面板号码设置，号码模糊处理" width="280">
 
 Android 同时避免复用已关闭的 HTTP 连接；响应提前关闭时只读 GET 最多重试一次，POST 写操作和鉴权失败不自动重试。
+
+
+## v0.3.0 / Android v0.4.0：删除、多选与通话界面
+
+- Android：进入某个短信会话，对单条短信左滑显示删除按钮；向右滑可收起。点击删除仍需确认。无障碍操作也提供“删除短信”。
+- 网页：每条短信末尾常驻“删除短信”按钮。
+- 两端支持会话内多选、全选和批量删除。每次最多 100 条；网页仅选择当前会话已加载的短信，未加载的短信不受影响。Android 选择当前会话中已读取的短信。
+- 删除会永久移除路由器模块中的短信，刷新后两端同步。批量删除依次执行、遇错即停，报告已删除和未确认的数量，不自动重试；超时先刷新核对。
+- 待机显示绿色拨号按钮；呼叫进行时隐藏拨号输入区，显示号码、状态和红色挂断按钮，来电额外提供绿色接听按钮。前台电话页自动刷新状态。
+- 通话时长采用单调时钟，从本页/App 首次检测到 active/held 状态开始计算，结束状态被检测到后停止。模块未提供可靠的接通时间戳，因此这不是运营商计费时长；重新打开或在后台错过状态变化时，计时不能还原完整历史。界面不提供通话音频。
+
+验证：Android 构建、Lint、14 项单元测试；模拟器脱敏短信删除/多选、模拟通话绿/红按钮和计时；网页模拟批量删除失败、确认取消、计时开始/停止；真实 LuCI 只验证入口和取消确认。本次未删除用户真实短信或实际拨号。
+
+<img src="docs/android-swipe-delete.png" alt="左滑显示删除，脱敏示例" width="260"> <img src="docs/android-multiselect.png" alt="多选短信，脱敏示例" width="260"> <img src="docs/android-call-active.png" alt="模拟通话与计时，不含真实号码" width="260">
+
+<img src="docs/web-multiselect.png" alt="网页多选短信，脱敏示例" width="720">
+<img src="docs/web-call-active.png" alt="网页模拟通话与计时" width="720">

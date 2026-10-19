@@ -27,6 +27,10 @@ class RouterViewModel(application: Application): AndroidViewModel(application) {
     var messages by mutableStateOf<List<Sms>>(emptyList()); private set
     var status by mutableStateOf<JSONObject?>(null); private set
     var calls by mutableStateOf<JSONObject?>(null); private set
+    var callTimings by mutableStateOf<Map<String, CallTiming>>(emptyMap()); private set
+    var callPollError by mutableStateOf<String?>(null); private set
+    private var pollingCalls = false
+    private var callsGeneration = 0L
     val voiceEnabled get() = status?.optJSONObject("voice")?.optBoolean("controls_enabled") == true
 
     init { if (connected) refreshAll() }
@@ -66,6 +70,7 @@ class RouterViewModel(application: Application): AndroidViewModel(application) {
     }
     fun logout() {
         if (busy) return
+        callsGeneration++; callTimings = emptyMap(); callPollError = null
         store.clear(); api.token = ""; connected = false; online = false; status = null; calls = null; messages = emptyList()
     }
     fun inspectIdentity() = work({
@@ -97,7 +102,41 @@ class RouterViewModel(application: Application): AndroidViewModel(application) {
     fun refreshAll() = work({ api.request("/status") to readMessages() }) { (s, list) -> status = s; ownNumber = s.optString("own_number"); messages = list }
     fun refreshMessages() = work({ readMessages() }) { messages = it }
     fun refreshStatus() = work({ api.request("/status") }) { status = it; ownNumber = it.optString("own_number") }
-    fun refreshCalls() = work({ api.request("/calls") }) { calls = it }
+    private fun applyCalls(value: JSONObject) {
+        callsGeneration++
+        val timings = mutableMapOf<String, CallTiming>()
+        val details = value.optJSONArray("details")
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (details != null) for (i in 0 until details.length()) {
+            val call = details.getJSONObject(i); val id = call.getString("id")
+            val state = call.optJSONObject("data")?.optJSONObject("call")?.optJSONObject("properties")?.optString("state") ?: ""
+            observeCall(callTimings[id], state, now)?.let { timings[id] = it }
+        }
+        calls = value; callTimings = timings; callPollError = null
+    }
+    fun pollCalls() {
+        if (busy || pollingCalls || !connected) return
+        pollingCalls = true
+        val generation = callsGeneration
+        viewModelScope.launch {
+            try {
+                val value = withContext(Dispatchers.IO) { api.request("/calls") }
+                if (!busy && connected && generation == callsGeneration) applyCalls(value)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                callPollError = "呼叫状态更新失败，请手动刷新核对。"
+            } finally { pollingCalls = false }
+        }
+    }
+    fun refreshCalls() = work({ api.request("/calls") }) { applyCalls(it) }
+    fun deleteSms(id: String) = deleteMessages(listOf(id))
+    fun deleteMessages(ids: List<String>) = work({
+        deleteSmsSequential(ids) { id -> check(api.request("/sms/delete", JSONObject().put("id", id)).optBoolean("ok")) { "删除未确认" } }
+    }) { result ->
+        messages = messages.filterNot { it.id in result.deleted }
+        if (result.error == null) notice = "已从路由器模块删除 ${result.deleted.size} 条短信。"
+        else error = "已删除 ${result.deleted.size} 条，${result.remaining.size} 条未确认删除。请先刷新核对，再选择剩余短信。\n${result.error}"
+    }
     fun send(number: String, text: String, sent: () -> Unit) = work({
         api.request("/sms/send", JSONObject().put("number", number.trim()).put("text", text))
     }) { notice = "短信已提交至模块，尚非送达确认。"; sent() }
@@ -105,5 +144,5 @@ class RouterViewModel(application: Application): AndroidViewModel(application) {
         require(action in listOf("dial", "accept", "hangup"))
         api.request("/calls/$action", if (action == "dial") JSONObject().put("number", number.trim()) else JSONObject().put("id", id))
         api.request("/calls")
-    }) { calls = it; notice = "呼叫操作已提交。此 App 不提供通话音频。" }
+    }) { applyCalls(it); notice = "呼叫操作已提交。此 App 不提供通话音频。" }
 }

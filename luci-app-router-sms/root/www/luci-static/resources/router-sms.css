@@ -14,4 +14,10 @@
 .rs-app .rs-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px;width:100%}
 .rs-app .rs-tabs button{min-width:0!important;padding:11px 4px;white-space:normal;font-size:14px}
 .rs-app .rs-empty{padding:36px 12px}.rs-app .rs-meta{flex-wrap:wrap}
+.rs-app .rs-delete-row{display:flex;justify-content:flex-end;margin-top:10px;gap:8px;flex-wrap:wrap}
+.rs-app .rs-button.call-dial{background:#20a477!important;color:#fff!important;border-radius:28px!important;min-height:52px}
+.rs-app .rs-button.call-hangup{background:#e5484d!important;color:#fff!important;border-radius:28px!important;min-height:56px;min-width:140px}
+.rs-app .rs-call-duration{font-family:monospace;font-size:30px;line-height:1.6;margin:12px 0}
+.rs-app .rs-phone .rs-call-state,.rs-app .rs-phone .rs-call-duration,.rs-app .rs-phone h3{text-align:center}
+.rs-app .rs-phone .rs-actions{justify-content:center}
 @container(max-width:760px){.rs-grid{grid-template-columns:minmax(0,1fr)!important}.rs-card{padding:16px}.rs-stat-grid{grid-template-columns:minmax(0,1fr)}.rs-threads{max-height:300px}}
