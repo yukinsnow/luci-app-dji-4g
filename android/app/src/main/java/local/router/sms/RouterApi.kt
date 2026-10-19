@@ -8,6 +8,15 @@ import java.net.URL
 
 class ApiException(val code: Int, message: String): IOException(message)
 
+internal fun <T> requestWithReadRetry(readOnly: Boolean, request: () -> T): T {
+    try { return request() }
+    catch (e: IOException) {
+        if (!readOnly || e is ApiException || (e !is java.io.EOFException && e.message?.contains("unexpected end of stream", true) != true)) throw e
+        // A stale connection can close without a response. Only reads may be retried.
+        return request()
+    }
+}
+
 object RouterConfig {
     fun token(config: String): String {
         val json = JSONObject(config)
@@ -17,13 +26,15 @@ object RouterConfig {
 }
 
 class RouterApi(var token: String = "") {
-    fun request(path: String, body: JSONObject? = null): JSONObject {
+    fun request(path: String, body: JSONObject? = null): JSONObject = requestWithReadRetry(body == null) { requestOnce(path, body) }
+    private fun requestOnce(path: String, body: JSONObject?): JSONObject {
         check(token.matches(Regex("[a-f0-9]{64}"))) { "请先登录路由器" }
         val connection = URL("http://${RouterLogin.HOST}:8765/v1$path").openConnection(Proxy.NO_PROXY) as HttpURLConnection
         try {
             connection.connectTimeout = 8000
             connection.readTimeout = 600000
             connection.instanceFollowRedirects = false
+            connection.setRequestProperty("Connection", "close")
             connection.setRequestProperty("Authorization", "Bearer $token")
             if (body != null) {
                 val bytes = body.toString().toByteArray(Charsets.UTF_8)

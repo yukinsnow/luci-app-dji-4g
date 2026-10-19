@@ -1,6 +1,6 @@
 # 第三方组件
 
-Android 0.3.0 使用以下开源依赖，版本由 Gradle 固定：
+Android 0.3.1 使用以下开源依赖，版本由 Gradle 固定：
 
 - [Compose Miuix 0.4.5](https://github.com/compose-miuix-ui/miuix/tree/v0.4.5)，Apache-2.0；Copyright 2025 miuix-kotlin-multiplatform contributors。
 - [AndroidX / Jetpack Compose](https://developer.android.com/jetpack/androidx)，Apache-2.0。

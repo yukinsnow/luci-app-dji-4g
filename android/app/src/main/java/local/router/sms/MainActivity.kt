@@ -56,9 +56,9 @@ private val green = Color(0xFF20A477)
     Text(title, modifier = Modifier.padding(start = 6.dp, top = 12.dp, bottom = 4.dp), fontSize = 13.sp,
         color = MiuixTheme.colorScheme.onSurfaceVariantSummary, fontWeight = FontWeight.Medium)
 }
-@Composable private fun Panel(content: @Composable ColumnScope.() -> Unit) {
-    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(20.dp), cornerRadius = 26.dp) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+@Composable private fun Panel(compact: Boolean = false, content: @Composable ColumnScope.() -> Unit) {
+    Card(modifier = Modifier.fillMaxWidth(), insideMargin = PaddingValues(if (compact) 16.dp else 20.dp), cornerRadius = 26.dp) {
+        Column(verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp), content = content)
     }
 }
 @Composable private fun Action(text: String, primary: Boolean = false, enabled: Boolean = true, modifier: Modifier = Modifier, click: () -> Unit) {
@@ -222,7 +222,7 @@ private val green = Color(0xFF20A477)
                             confirm = "退出后需要重新输入路由器密码。是否继续？" to { vm.logout() }
                         }
                     }
-                    Spacer(Modifier.height(18.dp)); Hint("路由器短信 0.3.0\nCompose Miuix · 本地设备管理")
+                    Spacer(Modifier.height(18.dp)); Hint("路由器短信 0.3.1\nCompose Miuix · 本地设备管理")
                 }
             }
             if (vm.busy) item { Hint("正在与路由器通信，请稍候…", Modifier.padding(6.dp)) }
@@ -337,23 +337,33 @@ private val green = Color(0xFF20A477)
     var number by remember { mutableStateOf("") }
     val result = vm.calls
     val enabled = result?.optBoolean("controls_enabled") ?: vm.voiceEnabled
+    val details = result?.optJSONArray("details")
+    val live = details != null && (0 until details.length()).any {
+        details.getJSONObject(it).optJSONObject("data")?.optJSONObject("call")?.optJSONObject("properties")?.optString("state") != "terminated"
+    }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Panel {
-            RoundSymbol(Icons.Outlined.Phone, if (enabled) blue else Color(0xFFDA9B22))
+        Panel(compact = true) {
             Text(if (enabled) "实验电话控制" else "电话控制未启用", fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-            Hint("支持查询当前呼叫。拨号、接听和挂断需后端启用，并通过实时能力检查。")
-            Text("不提供通话音频", fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            Hint("尚未确认 QDC507 的音频通路与 VoLTE 支持，不能在手机上听说通话。")
-            if (enabled) {
-                Field("实验呼叫号码", number, { number = it }, phone = true, enabled = !vm.busy)
-                Action("拨号", true, !vm.busy, Modifier.fillMaxWidth()) {
-                    if (!number.trim().matches(Regex("\\+?[0-9]{3,20}"))) vm.error = "请输入有效的电话号码。"
-                    else confirm("向 ${number.trim()} 发起实验呼叫？可能产生费用。没有通话音频，勿用于紧急电话。") { vm.call("dial", number) }
+            Hint("仅控制呼叫，不提供手机通话音频。拨号需后端启用。")
+            Text(number.ifEmpty { "输入要拨打的号码" }, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, maxLines = 2,
+                fontSize = if (number.length > 14) 22.sp else if (number.isEmpty()) 20.sp else 30.sp,
+                color = if (number.isEmpty()) MiuixTheme.colorScheme.onSurfaceVariantSummary else MiuixTheme.colorScheme.onSurface)
+            listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"), listOf("+", "0", "删除")).forEach { row ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    row.forEach { key ->
+                        TextButton(text = key, enabled = enabled && !vm.busy && !live,
+                            onClick = { number = dialerInput(number, key) },
+                            modifier = Modifier.weight(1f).height(52.dp), cornerRadius = 26.dp)
+                    }
                 }
+            }
+            Action(if (live) "呼叫进行中" else "拨打电话", true, enabled && !vm.busy && !live && number.matches(Regex("\\+?[0-9]{3,20}")), Modifier.fillMaxWidth()) {
+                val target = number
+                confirm("向 $target 发起实验呼叫？可能产生费用。没有通话音频，勿用于紧急电话。") { vm.call("dial", target) }
             }
         }
         Section("当前呼叫")
-        val details = result?.optJSONArray("details")
         if (details == null || details.length() == 0) Panel { Hint(if (vm.busy) "正在查询…" else "当前没有呼叫") }
         else for (i in 0 until details.length()) {
             val call = details.getJSONObject(i)

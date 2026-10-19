@@ -27,7 +27,7 @@ GL.iNet 的 80 端口是厂商管理页；已测试固件的原生 LuCI 在 8080
 交付包含两个 IPK：
 
 - `router-sms-api_0.3.1-1_all.ipk`：Python/ModemManager 后端、绑定辅助脚本、开机与 USB 热插拔集成。
-- `luci-app-router-sms_0.2.0-1_all.ipk`：LuCI 页面、菜单、最小范围 rpcd ACL 与固定方法桥接。
+- `luci-app-router-sms_0.2.1-1_all.ipk`：LuCI 页面、菜单、最小范围 rpcd ACL 与固定方法桥接。
 
 安装包不含私人密码、API Token、电话号码或这台机器的 SSH 公钥。新安装会在本机生成随机 Token；覆盖已有后端时保留 Token 和电话设置。
 
@@ -38,7 +38,7 @@ GL.iNet 的 80 端口是厂商管理页；已测试固件的原生 LuCI 在 8080
 ```sh
 df -h /overlay
 opkg update
-opkg install /tmp/router-sms-api_0.3.1-1_all.ipk /tmp/luci-app-router-sms_0.2.0-1_all.ipk
+opkg install /tmp/router-sms-api_0.3.1-1_all.ipk /tmp/luci-app-router-sms_0.2.1-1_all.ipk
 ```
 
 也可通过 LuCI“系统 → 软件包”先上传安装后端 IPK，再安装 LuCI IPK。依赖来自路由器当前包源，不需要编译工具或 Android SDK。rpcd 重载后如菜单未更新，重新登录并强制刷新浏览器。
@@ -111,13 +111,13 @@ LuCI 登录会话 → 专用 ubus/rpcd ACL → 本机 Token 桥接 → Python AP
 ![设置界面](docs/settings.png)
 
 
-## 安卓客户端 v0.3.0
+## 安卓客户端 v0.3.1
 
-从 [Releases](https://github.com/yukinsnow/luci-app-dji-4g/releases/latest) 下载 `RouterSMS-v0.3.0.apk`，支持 Android 8.0（API 26）以上。先安装本次配套后端 `router-sms-api_0.3.1-1_all.ipk`，再安装或升级 APK。APK 为本地 debug 签名构建，适合侧载测试；GitHub Actions 产物使用临时调试签名，覆盖安装请持续使用 Releases 中的本地签名版本。签名不同需先卸载，并重新登录。
+从 [Releases](https://github.com/yukinsnow/luci-app-dji-4g/releases/latest) 下载 `RouterSMS-v0.3.1.apk`，支持 Android 8.0（API 26）以上。先安装本次配套后端 `router-sms-api_0.3.1-1_all.ipk`，再安装或升级 APK。APK 为本地 debug 签名构建，适合侧载测试；GitHub Actions 产物使用临时调试签名，覆盖安装请持续使用 Releases 中的本地签名版本。签名不同需先卸载，并重新登录。
 
 连接路由器 Wi-Fi，首次点击“检测路由器身份”，与可信 SSH 客户端显示的 SHA256 指纹核对并确认，再用 root 和 SSH 密码登录。之后严格检查已保存的主机密钥，SSH 自动读取后端 Token，密码不保存。当前后端和客户端支持默认 LAN 地址 192.168.8.1；不支持自定义地址。设备指纹变化时请先核实重置/换机原因，再重新检测确认。
 
-本机号码位于底部“连接”页，输入后点击“保存本机号码”；LuCI 位于“设置 → 本机号码”。两端手动刷新可读取最新值，空值保存即清除。不会从截图或短信推断号码，也不会自动写入测试号码。配置存储在 `/etc/router-sms.json` 的 `own_number` 字段，读写均需鉴权。
+本机号码位于底部“连接”页，输入后点击“保存本机号码”；LuCI 可点击页头“本机号码”直达，也可在“设置 → 本机号码”找到。两端手动刷新可读取最新值，空值保存即清除。不会从截图或短信推断号码，也不会自动写入测试号码。配置存储在 `/etc/router-sms.json` 的 `own_number` 字段，读写均需鉴权。
 
 源码构建（JDK 17、Android SDK 35、Gradle 8.9）：
 
@@ -135,3 +135,16 @@ Android 下图为真实模拟器渲染的脱敏示例数据，号码和验证码
 <img src="docs/android-sms.png" alt="Android 短信会话，脱敏示例" width="280"> <img src="docs/android-number.png" alt="Android 本机号码设置，脱敏示例" width="280">
 
 <img src="docs/luci-number.png" alt="LuCI 本机号码设置，号码模糊处理" width="720">
+
+
+## v0.2.1 界面修复
+
+修复窄 LuCI 面板中的卡片/搜索框越界：按实际面板宽度自适应，处理主题输入框的最小宽度和盒模型；四个导航项保持可见。页头新增“本机号码”按钮，直接定位到号码输入框和保存按钮。更新后请 Ctrl+F5 强制刷新，页头应显示 v0.2.1。
+
+Android v0.3.1 电话页使用数字拨号盘（数字、+、删除），保留收费与无音频提示、拨号前确认、已有呼叫时禁止再次拨号。拨号盘不提供 USSD/DTMF 或通话音频。
+
+已在真实 LuCI 页面复现旧版 380px 面板越界，并验证修复后的 320/380/600/1000px 面板与 390px 手机视口；Android 通过构建、Lint、9 项单元测试与拨号盘界面输入/删除/确认取消测试。本次未实际拨号。
+
+<img src="docs/android-dialer.png" alt="Android 数字拨号盘，无私人号码" width="280"> <img src="docs/luci-mobile.png" alt="窄面板号码设置，号码模糊处理" width="280">
+
+Android 同时避免复用已关闭的 HTTP 连接；响应提前关闭时只读 GET 最多重试一次，POST 写操作和鉴权失败不自动重试。

@@ -39,7 +39,7 @@ return view.extend({
         if (data[1].value) this.mergeMessages(data[1].value, true);
         this.error = data.filter(function(d) { return d.error; }).map(function(d) { return d.error; }).join('；');
         this.page = E('div', { 'class': 'rs-app' }); this.draw();
-        return E('div', {}, [E('link', { 'rel': 'stylesheet', 'href': L.resource('router-sms.css') }), this.page]);
+        return E('div', {}, [E('link', { 'rel': 'stylesheet', 'href': L.resource('router-sms.css') + '?v=0.2.1' }), this.page]);
     },
     button: function(label, action, kind, write) {
         return E('button', { 'type': 'button', 'class': 'rs-button ' + (kind || ''),
@@ -81,7 +81,10 @@ return view.extend({
         this.page.replaceChildren();
         var self = this, tabs = [['sms', '短信会话'], ['calls', '电话'], ['status', '模块状态'], ['settings', '设置']];
         this.page.appendChild(E('header', { 'class': 'rs-header' }, [E('div', {}, [E('h2', {}, '短信与电话'),
-            hint('MG1300 × DJI 一代 4G · ModemManager')]), E('div', { 'class': 'rs-actions' }, [
+            hint('MG1300 × DJI 一代 4G · v0.2.1')]), E('div', { 'class': 'rs-actions' }, [
+            this.button('本机号码', function() { self.tab = 'settings'; self.draw(); return self.refresh().then(function() {
+                var input = self.page.querySelector('[aria-label="本机号码"]'); if (input) { input.scrollIntoView({block:'center'}); input.focus(); }
+            }); }),
             E('span', { 'class': 'rs-badge' + (this.error ? ' rs-warning' : '') }, this.error ? '需要检查' : 'LuCI 登录会话'),
             this.button(this.busy ? '正在读取…' : '刷新', function() { return self.refresh(); })
         ])]));
@@ -214,7 +217,7 @@ return view.extend({
             hint('开启时检测 ModemManager Voice 接口。接口可用不保证所有固件、SIM 或运营商都能实际通话。'),
             this.button('保存电话设置', function() { var value = toggle.checked; self.ask('保存电话设置', value ? '启用实验电话控制？拨号可能产生话费，浏览器无法听说。' : '关闭电话控制？',
                 function() { return api.voice(value); }, function() { if (self.device) self.device.voice_enabled = value; self.notify('电话设置已保存。'); }); }, 'primary', true)]),
-            card([E('h3', {}, '替换旧短信管理器'), hint('本插件使用 ModemManager，不读写旧插件的 AT 配置、通讯录或转发规则。旧插件目前保留，可在确认功能后自行卸载。'),
+            card([E('h3', {}, '替换旧短信管理器'), hint('本插件使用 ModemManager，不读写旧插件的 AT 配置、通讯录或转发规则。如需迁移旧插件，请先备份配置，再到软件包页卸载。'),
                 E('div', { 'class': 'rs-help' }, '不要同时让旧短信守护程序和 ModemManager 占用同一 AT 端口。此安装不会删除旧插件或其数据。')])]);
     }
 });
