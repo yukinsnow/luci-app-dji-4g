@@ -10,7 +10,7 @@
 
 | 组件 | 版本 | 文件 |
 | --- | --- | --- |
-| Android | 0.5.0 | `RouterSMS-v0.5.0.apk` |
+| Android | 0.5.1 | `RouterSMS-v0.5.1.apk` |
 | LuCI | 0.3.1-1 | `luci-app-router-sms_0.3.1-1_all.ipk` |
 | 后端 | 0.3.2-1 | `router-sms-api_0.3.2-1_all.ipk` |
 
@@ -18,7 +18,7 @@
 
 ## 功能
 
-- 短信会话、搜索、收发、回复、单条与多选删除。安卓支持左滑显示删除按钮，网页每条短信后提供删除按钮。
+- 短信会话、搜索、收发、回复、单条与多选删除。安卓会话列表左滑显示删除按钮，长按显示复选框，左上全选、右上删除，短信详情左滑单条短信也可在右侧显示删除按钮；网页每条短信后提供删除按钮。
 - 模块、信号和注册状态查询；手动保存本机号码，两端共用。
 - 实验电话：数字拨号盘、绿色拨号/接听、红色挂断、呼叫状态和通话计时。
 - 安卓短信与来电通知，设置中可开启或停止，默认隐藏号码、正文和验证码。
@@ -57,14 +57,14 @@ opkg install /tmp/router-sms-api_0.3.2-1_all.ipk /tmp/luci-app-router-sms_0.3.1-
 - **本机号码**：两端设置页均可保存或清空；LuCI 页头也有直达按钮。仅作备注，不修改 SIM 或实际发信号码。
 - **实验电话开关**：新安装默认关闭，在 LuCI 设置中启用。拨号可能产生话费，已有呼叫时禁止再次拨号。
 - **AT 测试**：两端设置页点击「测试 AT 并显示结果」，经 ModemManager 执行固定 `AT`，显示真实输出或错误，不接受自定义命令、不自动重启模块。本设备实测返回 `response: ''`，无附加文本。
-- **短信删除**：永久删除模块中的短信，刷新后两端同步。多选每次最多 100 条，网页仅选择当前会话已加载的短信；遇错停止，超时后先刷新核对。
+- **短信删除**：永久删除模块中的短信，刷新后两端同步。安卓列表支持多选会话、详情支持多选短信，每次最多 100 条，网页仅选择当前会话已加载的短信；遇错停止，超时后先刷新核对。
 - **搜索**：网页分页每次读取 5 条，搜索范围为当前已加载短信。
 
 ## 截图
 
 截图使用脱敏示例数据或已模糊的号码，不含真实短信。正式安卓 APK 保留截图保护。
 
-<img src="docs/android-sms.png" alt="安卓短信会话" width="250"> <img src="docs/android-dialer.png" alt="安卓拨号盘" width="250"> <img src="docs/android-notifications.png" alt="安卓通知" width="250">
+<img src="docs/android-inbox-delete.png" alt="安卓短信列表左滑删除" width="250"> <img src="docs/android-inbox-multiselect.png" alt="长按多选，顶部全选与删除" width="250"> <img src="docs/android-dialer.png" alt="安卓拨号盘" width="250"> <img src="docs/android-notifications.png" alt="安卓通知" width="250">
 
 <img src="docs/luci-number.png" alt="LuCI 本机号码设置，号码已模糊" width="720">
 

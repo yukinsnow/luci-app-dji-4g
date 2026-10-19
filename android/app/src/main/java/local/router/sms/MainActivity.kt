@@ -92,11 +92,14 @@ private val green = Color(0xFF20A477)
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None)
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable fun RouterApp(vm: RouterViewModel, notificationRoute: Pair<String, String>? = null, routeConsumed: () -> Unit = {}) {
     var tab by remember { mutableIntStateOf(0) }
     var recipient by remember { mutableStateOf<String?>(null) }
     var selecting by remember(recipient) { mutableStateOf(false) }
     var selectedSms by remember(recipient) { mutableStateOf<Set<String>>(emptySet()) }
+    var inboxSelecting by remember { mutableStateOf(false) }
+    var inboxSelected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var composing by remember { mutableStateOf(false) }
     var draftNumber by remember { mutableStateOf("") }
     var draftText by remember { mutableStateOf("") }
@@ -128,20 +131,36 @@ private val green = Color(0xFF20A477)
     LaunchedEffect(tab, vm.connected) {
         if (vm.connected) when(tab) { 1 -> vm.refreshCalls(); 2 -> vm.refreshStatus(); 3 -> vm.refreshNumber() }
     }
-    BackHandler(vm.connected && (composing || recipient != null || tab != 0)) {
-        if (!vm.busy) { if (composing) composing = false else if (recipient != null) recipient = null else tab = 0 }
+    val selectionMode = vm.connected && !composing && ((recipient != null && selecting) || (recipient == null && tab == 0 && inboxSelecting))
+    val visibleNumbers = vm.messages.filter { it.number.contains(search, true) || it.text.contains(search, true) }.map { it.number }.toSet()
+    val selectionScope = vm.messages.filter { if (recipient != null) it.number == recipient else it.number in visibleNumbers }
+    val selectionIds = selectionScope.filter { it.id in (if (recipient != null) selectedSms else inboxSelected) }.map { it.id }
+    fun exitSelection() { selecting = false; selectedSms = emptySet(); inboxSelecting = false; inboxSelected = emptySet() }
+    BackHandler(vm.connected && (selectionMode || composing || recipient != null || tab != 0)) {
+        if (!vm.busy) { if (selectionMode) exitSelection() else if (composing) composing = false else if (recipient != null) recipient = null else tab = 0 }
     }
     val title = when {
         !vm.connected -> "连接路由器"
+        selectionMode -> "已选 ${selectionIds.size} 条"
         composing -> "新短信"
         recipient != null -> recipient!!
         else -> listOf("短信", "电话", "设备", "设置")[tab]
     }
     Scaffold(
         topBar = { TopAppBar(title = title, navigationIcon = {
-            if (recipient != null || composing) Action("返回", enabled = !vm.busy) { if (composing) composing = false else recipient = null }
+            if (selectionMode) Action("全选", enabled = !vm.busy) {
+                val ids = selectionScope.map { it.id }.toSet()
+                if (recipient != null) selectedSms = ids else inboxSelected = ids
+            }
+            else if (recipient != null || composing) Action("返回", enabled = !vm.busy) { if (composing) composing = false else recipient = null }
         }, actions = {
-            if (vm.connected && !composing) Action(if (vm.busy) "连接中" else "刷新", enabled = !vm.busy) {
+            if (selectionMode) {
+                Action("取消", enabled = !vm.busy) { exitSelection() }
+                Action("删除", enabled = !vm.busy && selectionIds.size in 1..100) {
+                    val ids = selectionIds.toList()
+                    confirm = "永久删除选中的 ${ids.size} 条短信？删除后两端都会消失，无法恢复。" to { vm.deleteMessages(ids) }
+                }
+            } else if (vm.connected && !composing) Action(if (vm.busy) "连接中" else "刷新", enabled = !vm.busy) {
                 when(tab) { 0 -> vm.refreshAll(); 1 -> vm.refreshCalls(); else -> vm.refreshStatus() }
             }
         }) },
@@ -149,7 +168,7 @@ private val green = Color(0xFF20A477)
             if (vm.connected && recipient == null && !composing) NavigationBar(
                 items = listOf(NavigationItem("短信", Icons.Outlined.Email), NavigationItem("电话", Icons.Outlined.Phone),
                     NavigationItem("设备", Icons.Outlined.Info), NavigationItem("设置", Icons.Outlined.Settings)),
-                selected = tab, onClick = { if (!vm.busy) tab = it }, showDivider = false)
+                selected = tab, onClick = { if (!vm.busy) { exitSelection(); tab = it } }, showDivider = false)
         }
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding(),
@@ -180,17 +199,7 @@ private val green = Color(0xFF20A477)
                 val chosen = thread.filter { it.id in selectedSms }.map { it.id }
                 item {
                     Hint("${thread.size} 条短信 · 保存在路由器中")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Action(if (selecting) "取消多选" else "多选", enabled = !vm.busy) { selecting = !selecting; selectedSms = emptySet() }
-                        if (selecting) {
-                            Action("全选", enabled = !vm.busy) { selectedSms = thread.take(100).map { it.id }.toSet() }
-                            Action("删除(${chosen.size})", enabled = !vm.busy && chosen.isNotEmpty()) {
-                                val ids = chosen.toList()
-                                confirm = "永久删除选中的 ${ids.size} 条短信？删除后两端都会消失，无法恢复。" to { vm.deleteMessages(ids) }
-                            }
-                        }
-                    }
-                    if (selecting) Hint("已选 ${chosen.size} 条 · 每次最多 100 条，仅选择当前会话")
+                    if (selecting) Hint("已选 ${chosen.size} 条 · 每次最多删除 100 条，超过请取消部分选择")
                 }
                 items(thread, key = { it.id }) { sms ->
                     if (selecting) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -201,7 +210,9 @@ private val green = Color(0xFF20A477)
                     SwipeSmsDelete(sms.id, !vm.busy && !selecting, onDelete = {
                         confirm = "从路由器模块永久删除这条短信？删除后两端都会消失，无法恢复。" to { vm.deleteSms(sms.id) }
                     }) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (sms.outgoing) Arrangement.End else Arrangement.Start) {
+                    Row(Modifier.fillMaxWidth().combinedClickable(enabled = !vm.busy,
+                        onClick = { if (selecting) selectedSms = if (sms.id in selectedSms) selectedSms - sms.id else selectedSms + sms.id },
+                        onLongClick = { selecting = true; selectedSms = setOf(sms.id) }), horizontalArrangement = if (sms.outgoing) Arrangement.End else Arrangement.Start) {
                         Card(modifier = Modifier.fillMaxWidth(.92f), color = if (sms.outgoing) MiuixTheme.colorScheme.tertiaryContainer else MiuixTheme.colorScheme.surface,
                             insideMargin = PaddingValues(18.dp), cornerRadius = 24.dp) {
                             Text(sms.text.ifEmpty { "非文本短信" }, fontSize = 17.sp, lineHeight = 26.sp)
@@ -211,7 +222,7 @@ private val green = Color(0xFF20A477)
                     }
                     }
                 }
-                item { Hint("对单条短信左滑可显示删除按钮；点击后还需确认。") }
+                item { Hint("左滑短信在右侧显示删除；长按短信进入多选。") }
                 item { Action("回复短信", true, !vm.busy, Modifier.fillMaxWidth()) { draftNumber = recipient!!; composing = true } }
             } else when(tab) {
                 0 -> {
@@ -230,12 +241,26 @@ private val green = Color(0xFF20A477)
                     item { Field("搜索号码或短信", search, { search = it }) }
                     val groups = vm.messages.groupBy { it.number }.entries.sortedByDescending { it.value.maxOf { s -> s.time } }
                         .filter { it.key.contains(search, true) || it.value.any { s -> s.text.contains(search, true) } }
+                    val inboxChosen = selectionIds
+                    item {
+                        Hint(if (inboxSelecting) "按会话选择短信 · 已选 ${inboxChosen.size} 条 · 每次最多 100 条" else "左滑会话显示删除；长按会话进入多选。")
+                    }
                     if (groups.isEmpty()) item { EmptyPane(if (search.isBlank()) "这里还没有短信" else "没有找到相关短信", "点击右上角刷新，查看路由器中的最新消息。") }
                     items(groups, key = { it.key }) { (number, list) ->
                         val latest = list.maxWithOrNull(compareBy<Sms> { it.time }.thenBy { it.id.toIntOrNull() ?: 0 })!!
-                        Card(modifier = Modifier.fillMaxWidth().clickable(enabled = !vm.busy) { recipient = number },
+                        val ids = list.map { it.id }.toSet()
+                        val checked = ids.all { it in inboxSelected }
+                        fun toggleThread() { inboxSelected = if (checked) inboxSelected - ids else inboxSelected + ids }
+                        SwipeSmsDelete("thread-$number", !vm.busy && !inboxSelecting, onDelete = {
+                            if (ids.size > 100) { recipient = number; vm.notice = "此会话超过 100 条，请进入多选分批删除。" }
+                            else confirm = "永久删除此会话已读取的 ${ids.size} 条短信？删除后两端都会消失，无法恢复。" to { vm.deleteMessages(ids.toList()) }
+                        }, deleteLabel = "删除会话") {
+                        Card(modifier = Modifier.fillMaxWidth().combinedClickable(enabled = !vm.busy,
+                            onClick = { if (inboxSelecting) toggleThread() else recipient = number },
+                            onLongClick = { inboxSelecting = true; inboxSelected = ids }),
                             insideMargin = PaddingValues(20.dp), cornerRadius = 24.dp) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                if (inboxSelecting) Checkbox(checked = checked, enabled = !vm.busy, onCheckedChange = { toggleThread() })
                                 Box(Modifier.size(44.dp).clip(CircleShape).background(blue.copy(alpha = .10f)), contentAlignment = Alignment.Center) {
                                     Text(number.takeLast(2), color = blue, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                                 }
@@ -249,6 +274,7 @@ private val green = Color(0xFF20A477)
                                     if (latest.time.isNotEmpty()) Hint(latest.time.replace('T', ' ').take(16))
                                 }
                             }
+                        }
                         }
                     }
                     item { Hint("手动刷新 · 短信不保存到手机 · 不访问手机 SIM") }
@@ -276,7 +302,7 @@ private val green = Color(0xFF20A477)
                             confirm = "退出后需要重新输入路由器密码。是否继续？" to { vm.logout() }
                         }
                     }
-                    Spacer(Modifier.height(18.dp)); Hint("路由器短信 0.5.0\nCompose Miuix · 本地设备管理")
+                    Spacer(Modifier.height(18.dp)); Hint("路由器短信 0.5.1\nCompose Miuix · 本地设备管理")
                 }
             }
             if (vm.busy) item { Hint("正在与路由器通信，请稍候…", Modifier.padding(6.dp)) }
