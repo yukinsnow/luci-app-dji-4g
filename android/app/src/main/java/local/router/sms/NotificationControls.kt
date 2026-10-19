@@ -17,6 +17,7 @@ import top.yukonga.miuix.kmp.basic.*
 
 @Composable fun NotificationControls(vm: RouterViewModel) {
     val context = LocalContext.current
+    var showContent by remember { mutableStateOf(NotificationPrivacy.showContent(context)) }
     var active by remember { mutableStateOf(RouterNotificationService.running) }
     LaunchedEffect(Unit) { while (true) { active = RouterNotificationService.running; kotlinx.coroutines.delay(1000) } }
     val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -36,6 +37,14 @@ import top.yukonga.miuix.kmp.basic.*
                         vm.error = "系统已关闭此 App 的通知，请先到系统通知设置中开启。"
                     } else vm.enableNotifications()
                 })
+            Text("短信通知内容：" + if (showContent) "显示短信内容" else "隐私保护")
+            TextButton(text = "隐私保护", enabled = showContent, modifier = Modifier.fillMaxWidth(), onClick = {
+                NotificationPrivacy.setShowContent(context, false); showContent = false
+            })
+            TextButton(text = "显示短信内容", enabled = !showContent, modifier = Modifier.fillMaxWidth(), onClick = {
+                NotificationPrivacy.setShowContent(context, true); showContent = true
+            })
+            Text("显示内容会在通知中展示发信号码、正文及验证码；锁屏显示仍受系统通知设置控制。切换后清除现有短信通知，从下一条新短信起生效；无需重启监听。")
             TextButton(text = "系统通知设置", modifier = Modifier.fillMaxWidth(), onClick = {
                 context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName))
             })

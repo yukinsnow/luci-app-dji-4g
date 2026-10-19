@@ -302,7 +302,7 @@ private val green = Color(0xFF20A477)
                             confirm = "退出后需要重新输入路由器密码。是否继续？" to { vm.logout() }
                         }
                     }
-                    Spacer(Modifier.height(18.dp)); Hint("路由器短信 0.5.1\nCompose Miuix · 本地设备管理")
+                    Spacer(Modifier.height(18.dp)); Hint("路由器短信 0.5.2\nCompose Miuix · 本地设备管理")
                 }
             }
             if (vm.busy) item { Hint("正在与路由器通信，请稍候…", Modifier.padding(6.dp)) }

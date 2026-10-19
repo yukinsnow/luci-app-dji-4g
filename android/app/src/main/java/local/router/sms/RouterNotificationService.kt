@@ -118,8 +118,16 @@ class RouterNotificationService : Service() {
                         val count = (prefs.getInt("pending_count", 0) + received.size).coerceAtMost(9999)
                         prefs.edit().putInt("pending_count", count).apply()
                         val number = if (count == 1 && received.size == 1) received[0].number else ""
-                        manager.notify(SMS_ID, basic(SMS, "路由器有 $count 条新短信", "号码、正文和验证码已隐藏，点击查看", "sms")
-                            .setContentIntent(open("sms", number)).setCategory(Notification.CATEGORY_MESSAGE).setAutoCancel(true).build())
+                        synchronized(NotificationPrivacy) {
+                            val showContent = NotificationPrivacy.showContent(this)
+                            val latest = received.last()
+                            val display = smsNotificationText(showContent, count, latest.number, latest.text)
+                            val notification = basic(SMS, display.title, display.body, "sms")
+                                .setContentIntent(open("sms", number)).setCategory(Notification.CATEGORY_MESSAGE).setAutoCancel(true)
+                            if (showContent) notification.setVisibility(Notification.VISIBILITY_PUBLIC).setPublicVersion(null)
+                                .setStyle(Notification.BigTextStyle().bigText(display.body))
+                            manager.notify(SMS_ID, notification.build())
+                        }
                     }
                     if (savedGeneration != ledger.generation || savedIds != ledger.seen) {
                         prefs.edit().putString("generation", ledger.generation).putStringSet("seen_ids", ledger.seen.toSet()).apply()

@@ -10,7 +10,7 @@
 
 | 组件 | 版本 | 文件 |
 | --- | --- | --- |
-| Android | 0.5.1 | `RouterSMS-v0.5.1.apk` |
+| Android | 0.5.2 | `RouterSMS-v0.5.2.apk` |
 | LuCI | 0.3.1-1 | `luci-app-router-sms_0.3.1-1_all.ipk` |
 | 后端 | 0.3.2-1 | `router-sms-api_0.3.2-1_all.ipk` |
 
@@ -21,7 +21,7 @@
 - 短信会话、搜索、收发、回复、单条与多选删除。安卓会话列表左滑显示删除按钮，长按显示复选框，左上全选、右上删除，短信详情左滑单条短信也可在右侧显示删除按钮；网页每条短信后提供删除按钮。
 - 模块、信号和注册状态查询；手动保存本机号码，两端共用。
 - 实验电话：数字拨号盘、绿色拨号/接听、红色挂断、呼叫状态和通话计时。
-- 安卓短信与来电通知，设置中可开启或停止，默认隐藏号码、正文和验证码。
+- 安卓短信与来电通知，设置中可开启或停止，默认隐私保护，也可选择直接显示短信内容。
 - MG1300 / DJI 一代模块检测与一键绑定；固定只读 AT 测试，显示原始回复或错误。
 
 **电话只提供呼叫控制，不提供手机或浏览器通话音频。** 当前设备已验证外呼接通和挂断；其他固件、SIM 和运营商需自行验证。计时从首次检测到接通开始，不能还原完整历史，也不是运营商计费时长。
@@ -50,6 +50,8 @@ opkg install /tmp/router-sms-api_0.3.2-1_all.ipk /tmp/luci-app-router-sms_0.3.1-
 
 在 **设置 → 短信与来电通知** 开启监听并允许系统通知权限。新短信约每 20 秒、来电约每 5 秒检查一次；首次开启或后端/模块重新识别时建立基线，不补发历史短信。点击通知进入对应页面，也可从常驻通知停止监听。
 
+在同一设置卡片选择「隐私保护」或「显示短信内容」。默认隐私保护隐藏号码、正文与验证码；显示内容模式展示最新短信的号码和正文，长文本可展开（最多 1000 字符），锁屏显示仍受系统设置控制。切换时清除现有短信通知，从下一条新短信起生效，无需重启监听；短信内容不会因此保存到 App 配置。
+
 通知需要保持局域网可达，省电限制可能延迟提醒；强行停止、手机重启或系统回收服务后，需要重新打开 App 并开启监听。
 
 ## 设置与使用
@@ -64,7 +66,7 @@ opkg install /tmp/router-sms-api_0.3.2-1_all.ipk /tmp/luci-app-router-sms_0.3.1-
 
 截图使用脱敏示例数据或已模糊的号码，不含真实短信。正式安卓 APK 保留截图保护。
 
-<img src="docs/android-inbox-delete.png" alt="安卓短信列表左滑删除" width="250"> <img src="docs/android-inbox-multiselect.png" alt="长按多选，顶部全选与删除" width="250"> <img src="docs/android-dialer.png" alt="安卓拨号盘" width="250"> <img src="docs/android-notifications.png" alt="安卓通知" width="250">
+<img src="docs/android-inbox-delete.png" alt="安卓短信列表左滑删除" width="250"> <img src="docs/android-inbox-multiselect.png" alt="长按多选，顶部全选与删除" width="250"> <img src="docs/android-dialer.png" alt="安卓拨号盘" width="250"> <img src="docs/android-notifications.png" alt="安卓通知" width="250"> <img src="docs/android-notification-settings.png" alt="短信通知内容与隐私模式设置" width="250">
 
 <img src="docs/luci-number.png" alt="LuCI 本机号码设置，号码已模糊" width="720">
 
@@ -90,6 +92,6 @@ cd android
 ./gradlew assembleDebug lintDebug testDebugUnitTest
 ```
 
-Windows 使用 `gradlew.bat`，APK 位于 `android/app/build/outputs/apk/debug/`。当前后端 21 项测试、安卓 17 项测试及 Lint 通过；通知使用 Android 15 模拟器验证，AT 结果显示已在真实路由器与 LuCI 页面验证。
+Windows 使用 `gradlew.bat`，APK 位于 `android/app/build/outputs/apk/debug/`。当前后端 21 项测试、安卓 20 项测试及 Lint 通过；通知使用 Android 15 模拟器验证，AT 结果显示已在真实路由器与 LuCI 页面验证。
 
 MIT 许可证。安卓第三方许可见 [THIRD-PARTY.md](android/THIRD-PARTY.md)。
