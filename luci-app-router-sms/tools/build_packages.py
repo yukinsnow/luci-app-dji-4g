@@ -12,6 +12,10 @@ OUT.mkdir(exist_ok=True)
 APP=ROOT/'luci-app-router-sms'
 BACKEND=ROOT/'router-sms'/'backend'
 STAMP=1792368000
+
+def source_bytes(path):
+    # These package sources are text; Windows checkouts must retain Unix shebangs.
+    return path.read_bytes().replace(b"\r\n", b"\n")
 def tar_bytes(files):
     output=io.BytesIO()
     with tarfile.open(fileobj=output,mode='w',format=tarfile.GNU_FORMAT) as archive:
@@ -39,10 +43,10 @@ def package(name,version,depends,files,scripts):
 
 files={}
 for name in ['router_api.py','router_setup.py']:
-    files['usr/lib/router-sms/'+name]=((BACKEND/name).read_bytes(),0o644)
-files['etc/init.d/router-sms']=((BACKEND/'router-sms.init').read_bytes(),0o755)
-files['etc/init.d/router-sms-bind']=((BACKEND/'router-sms-bind.init').read_bytes(),0o755)
-files['etc/hotplug.d/usb/80-router-sms-bind']=((BACKEND/'80-router-sms-bind').read_bytes(),0o755)
+    files['usr/lib/router-sms/'+name]=(source_bytes(BACKEND/name),0o644)
+files['etc/init.d/router-sms']=(source_bytes(BACKEND/'router-sms.init'),0o755)
+files['etc/init.d/router-sms-bind']=(source_bytes(BACKEND/'router-sms-bind.init'),0o755)
+files['etc/hotplug.d/usb/80-router-sms-bind']=(source_bytes(BACKEND/'80-router-sms-bind'),0o755)
 files['lib/upgrade/keep.d/router-sms']=(b'/etc/router-sms.json\n',0o644)
 postinst='''#!/bin/sh
 [ -n "$IPKG_INSTROOT" ] && exit 0
@@ -70,7 +74,7 @@ files={}
 for p in (APP/'root').rglob('*'):
     if p.is_file():
         rel=p.relative_to(APP/'root').as_posix()
-        files[rel]=(p.read_bytes(),0o755 if rel.startswith('usr/libexec/rpcd/') else 0o644)
+        files[rel]=(source_bytes(p),0o755 if rel.startswith('usr/libexec/rpcd/') else 0o644)
 postinst='''#!/bin/sh
 [ -n "$IPKG_INSTROOT" ] && exit 0
 rm -f /tmp/luci-indexcache*
