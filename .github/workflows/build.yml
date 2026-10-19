@@ -1,0 +1,19 @@
+name: Test and build IPKs
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m unittest discover -s router-sms/backend -v
+      - run: node --check luci-app-router-sms/root/www/luci-static/resources/view/router_sms/overview.js
+      - run: python luci-app-router-sms/tools/build_packages.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-ipks
+          path: dist/*

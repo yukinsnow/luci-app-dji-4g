@@ -1,0 +1,6 @@
+#!/bin/sh
+# The profile marker is checked by the Python helper; other USB IDs are ignored.
+[ "$ACTION" = add ] || exit 0
+case "$PRODUCT" in
+    2ca3/4006/*) /usr/bin/python3 /usr/lib/router-sms/router_setup.py ;;
+esac

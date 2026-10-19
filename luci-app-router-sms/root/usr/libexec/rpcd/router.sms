@@ -1,0 +1,61 @@
+#!/usr/bin/python3
+"""rpcd executable plugin. A fixed method map; API credentials never reach LuCI."""
+import json
+import sys
+import urllib.request
+import urllib.error
+
+METHODS = {'status': {}, 'messages': {'offset': 0}, 'calls': {},
+           'send': {'number': '', 'text': ''}, 'delete': {'id': ''},
+           'dial': {'number': ''}, 'accept': {'id': ''}, 'hangup': {'id': ''},
+           'device_status': {}, 'device_setup': {}, 'set_voice': {'enabled': True}}
+
+def invoke(method, args):
+    if method not in METHODS or not isinstance(args, dict): raise ValueError('Unknown method or invalid parameters')
+    # rpcd/uhttpd may append its already-authorized session identifier.
+    args = {k: v for k, v in args.items() if k != 'ubus_rpc_session'}
+    if set(args) - set(METHODS[method]): raise ValueError('Unexpected parameters')
+    defaults = METHODS[method]
+    for key, default in defaults.items():
+        value = args.get(key, default)
+        if type(value) is not type(default): raise ValueError('Invalid parameter type: ' + key)
+    routes = {'status': '/status', 'messages': '/sms', 'calls': '/calls', 'send': '/sms/send',
+              'delete': '/sms/delete', 'dial': '/calls/dial', 'accept': '/calls/accept',
+              'hangup': '/calls/hangup', 'device_status': '/device/status',
+              'device_setup': '/device/setup', 'set_voice': '/settings/voice'}
+    route = routes[method]
+    data = None
+    if method == 'messages':
+        offset = args.get('offset', 0)
+        if not 0 <= offset <= 10000: raise ValueError('Invalid offset')
+        route += '?offset=' + str(offset) + '&limit=5&order=newest'
+    elif method not in ('status', 'calls', 'device_status'):
+        data = json.dumps(args, ensure_ascii=False).encode('utf-8')
+    with open('/etc/router-sms.json', encoding='utf-8') as f: config = json.load(f)
+    request = urllib.request.Request('http://192.168.8.1:8765/v1' + route, data=data,
+        headers={'Authorization': 'Bearer ' + config['token'], 'Content-Type': 'application/json'})
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    try:
+        with opener.open(request, timeout=18) as response:
+            value = json.load(response)
+        return {'ok': True, 'data': value}
+    except urllib.error.HTTPError as error:
+        try: message = json.load(error).get('error', 'Backend error')
+        except ValueError: message = 'Backend error'
+        return {'ok': False, 'status': error.code, 'error': message}
+
+def main():
+    if len(sys.argv) == 2 and sys.argv[1] == 'list':
+        print(json.dumps(METHODS)); return
+    try:
+        if len(sys.argv) != 3 or sys.argv[1] != 'call': raise ValueError('Invalid invocation')
+        raw = sys.stdin.buffer.read(16385)
+        if len(raw) > 16384: raise ValueError('Request too large')
+        result = invoke(sys.argv[2], json.loads(raw or b'{}'))
+    except (ValueError, TypeError) as error:
+        result = {'ok': False, 'status': 400, 'error': str(error)}
+    except (OSError, KeyError, urllib.error.URLError):
+        result = {'ok': False, 'status': 503, 'error': '短信服务未就绪或请求超时，请先检测设备；发送或拨号超时后请刷新，勿直接重复操作'}
+    print(json.dumps(result, ensure_ascii=False))
+
+if __name__ == '__main__': main()
