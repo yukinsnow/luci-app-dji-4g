@@ -5,7 +5,7 @@ import sys
 import urllib.request
 import urllib.error
 
-METHODS = {'status': {}, 'messages': {'offset': 0}, 'calls': {},
+METHODS = {'at_test': {}, 'status': {}, 'messages': {'offset': 0}, 'calls': {},
            'send': {'number': '', 'text': ''}, 'delete': {'id': ''},
            'dial': {'number': ''}, 'accept': {'id': ''}, 'hangup': {'id': ''},
            'device_status': {}, 'device_setup': {}, 'set_voice': {'enabled': True},
@@ -20,7 +20,7 @@ def invoke(method, args):
     for key, default in defaults.items():
         value = args.get(key, default)
         if type(value) is not type(default): raise ValueError('Invalid parameter type: ' + key)
-    routes = {'status': '/status', 'messages': '/sms', 'calls': '/calls', 'send': '/sms/send',
+    routes = {'at_test': '/diagnostics/at', 'status': '/status', 'messages': '/sms', 'calls': '/calls', 'send': '/sms/send',
               'delete': '/sms/delete', 'dial': '/calls/dial', 'accept': '/calls/accept',
               'hangup': '/calls/hangup', 'device_status': '/device/status',
               'device_setup': '/device/setup', 'set_voice': '/settings/voice',

@@ -26,8 +26,8 @@ GL.iNet 的 80 端口是厂商管理页；已测试固件的原生 LuCI 在 8080
 
 交付包含两个 IPK：
 
-- `router-sms-api_0.3.1-1_all.ipk`：Python/ModemManager 后端、绑定辅助脚本、开机与 USB 热插拔集成。
-- `luci-app-router-sms_0.3.0-1_all.ipk`：LuCI 页面、菜单、最小范围 rpcd ACL 与固定方法桥接。
+- `router-sms-api_0.3.2-1_all.ipk`：Python/ModemManager 后端、绑定辅助脚本、开机与 USB 热插拔集成。
+- `luci-app-router-sms_0.3.1-1_all.ipk`：LuCI 页面、菜单、最小范围 rpcd ACL 与固定方法桥接。
 
 安装包不含私人密码、API Token、电话号码或这台机器的 SSH 公钥。新安装会在本机生成随机 Token；覆盖已有后端时保留 Token 和电话设置。
 
@@ -38,7 +38,7 @@ GL.iNet 的 80 端口是厂商管理页；已测试固件的原生 LuCI 在 8080
 ```sh
 df -h /overlay
 opkg update
-opkg install /tmp/router-sms-api_0.3.1-1_all.ipk /tmp/luci-app-router-sms_0.3.0-1_all.ipk
+opkg install /tmp/router-sms-api_0.3.2-1_all.ipk /tmp/luci-app-router-sms_0.3.1-1_all.ipk
 ```
 
 也可通过 LuCI“系统 → 软件包”先上传安装后端 IPK，再安装 LuCI IPK。依赖来自路由器当前包源，不需要编译工具或 Android SDK。rpcd 重载后如菜单未更新，重新登录并强制刷新浏览器。
@@ -111,13 +111,13 @@ LuCI 登录会话 → 专用 ubus/rpcd ACL → 本机 Token 桥接 → Python AP
 ![设置界面](docs/settings.png)
 
 
-## 安卓客户端 v0.4.0
+## 安卓客户端 v0.5.0
 
-从 [Releases](https://github.com/yukinsnow/luci-app-dji-4g/releases/latest) 下载 `RouterSMS-v0.4.0.apk`，支持 Android 8.0（API 26）以上。先安装本次配套后端 `router-sms-api_0.3.1-1_all.ipk`，再安装或升级 APK。APK 为本地 debug 签名构建，适合侧载测试；GitHub Actions 产物使用临时调试签名，覆盖安装请持续使用 Releases 中的本地签名版本。签名不同需先卸载，并重新登录。
+从 [Releases](https://github.com/yukinsnow/luci-app-dji-4g/releases/latest) 下载 `RouterSMS-v0.5.0.apk`，支持 Android 8.0（API 26）以上。先安装本次配套后端 `router-sms-api_0.3.2-1_all.ipk`，再安装或升级 APK。APK 为本地 debug 签名构建，适合侧载测试；GitHub Actions 产物使用临时调试签名，覆盖安装请持续使用 Releases 中的本地签名版本。签名不同需先卸载，并重新登录。
 
 连接路由器 Wi-Fi，首次点击“检测路由器身份”，与可信 SSH 客户端显示的 SHA256 指纹核对并确认，再用 root 和 SSH 密码登录。之后严格检查已保存的主机密钥，SSH 自动读取后端 Token，密码不保存。当前后端和客户端支持默认 LAN 地址 192.168.8.1；不支持自定义地址。设备指纹变化时请先核实重置/换机原因，再重新检测确认。
 
-本机号码位于底部“连接”页，输入后点击“保存本机号码”；LuCI 可点击页头“本机号码”直达，也可在“设置 → 本机号码”找到。两端手动刷新可读取最新值，空值保存即清除。不会从截图或短信推断号码，也不会自动写入测试号码。配置存储在 `/etc/router-sms.json` 的 `own_number` 字段，读写均需鉴权。
+本机号码位于底部“设置”页，输入后点击“保存本机号码”；LuCI 可点击页头“本机号码”直达，也可在“设置 → 本机号码”找到。两端手动刷新可读取最新值，空值保存即清除。不会从截图或短信推断号码，也不会自动写入测试号码。配置存储在 `/etc/router-sms.json` 的 `own_number` 字段，读写均需鉴权。
 
 源码构建（JDK 17、Android SDK 35、Gradle 8.9）：
 
@@ -165,3 +165,18 @@ Android 同时避免复用已关闭的 HTTP 连接；响应提前关闭时只读
 
 <img src="docs/web-multiselect.png" alt="网页多选短信，脱敏示例" width="720">
 <img src="docs/web-call-active.png" alt="网页模拟通话与计时" width="720">
+
+
+## v0.4.0 / Android v0.5.0：通知与 AT 测试
+
+安卓「设置 → 短信与来电通知」可开启/停止后台监听。Android 13 以上需允许通知权限；开启后有常驻状态通知，也可从通知停止。新短信约 20 秒、来电约 5 秒检查一次，断线自动退避重试。首次开启及后端/模块重新识别时只建立基线，不补发旧短信。停止后重新开启仍保留已提醒短信 ID，避免重复；不保存短信正文到通知记录。
+
+通知默认隐藏号码、正文及验证码；点击短信通知进入消息，点击来电通知进入电话页。通知不直接拨号、接听或提供音频。需要处于路由器可访问的局域网。强行停止、重启手机或系统回收服务后需打开 App 重新开启；省电限制可能延迟提醒，无法保证即时送达。系统通知设置可分别调整短信、来电和后台状态频道。
+
+Android 与 LuCI 设置页均有「测试 AT 并显示结果」。接口仅允许固定 `AT` 命令，通过 ModemManager 执行，不直接打开串口、不允许任意命令，不修改配置。显示执行结果或服务返回的错误；某些 ModemManager 配置会禁止 AT 命令，此时会明确显示失败，不自动启用调试或重启模块。结果可能包含设备诊断信息，分享前请核对隐私。
+
+后端增加鉴权的短信索引及单条读取接口，减少后台轮询读取正文的负担；单条读取仍校验所属模块。AT 测试使用鉴权 POST `/v1/diagnostics/at`，拒绝所有自定义参数。LuCI rpcd 只暴露固定 `at_test` 方法。
+
+<img src="docs/android-notifications.png" width="300" alt="Android 通知示例，使用脱敏测试数据">
+
+实机 AT 检测：本设备命令执行成功，ModemManager 原始输出为 `response: ''`（无附加文本），不能据此推断通话音频可用。

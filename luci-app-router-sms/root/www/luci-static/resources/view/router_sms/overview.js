@@ -11,7 +11,7 @@ var api = {
     send: method('send', ['number', 'text']), remove: method('delete', ['id']),
     dial: method('dial', ['number']), accept: method('accept', ['id']), hangup: method('hangup', ['id']),
     device: method('device_status'), setup: method('device_setup'), voice: method('set_voice', ['enabled']),
-    settings: method('settings'), number: method('set_number', ['own_number'])
+    at: method('at_test'), settings: method('settings'), number: method('set_number', ['own_number'])
 };
 function unwrap(reply) {
     if (!reply || reply.ok !== true) throw new Error(reply && reply.error || '短信服务未响应，请检查服务是否运行');
@@ -59,7 +59,7 @@ return view.extend({
                 }
             }).finally(function() { self.callPolling = false; });
         }, 1000);
-        return E('div', {}, [E('link', { 'rel': 'stylesheet', 'href': L.resource('router-sms.css') + '?v=0.3.0' }), this.page]);
+        return E('div', {}, [E('link', { 'rel': 'stylesheet', 'href': L.resource('router-sms.css') + '?v=0.3.1' }), this.page]);
     },
     button: function(label, action, kind, write) {
         return E('button', { 'type': 'button', 'class': 'rs-button ' + (kind || ''),
@@ -133,7 +133,7 @@ return view.extend({
         this.page.replaceChildren();
         var self = this, tabs = [['sms', '短信会话'], ['calls', '电话'], ['status', '模块状态'], ['settings', '设置']];
         this.page.appendChild(E('header', { 'class': 'rs-header' }, [E('div', {}, [E('h2', {}, '短信与电话'),
-            hint('MG1300 × DJI 一代 4G · v0.3.0')]), E('div', { 'class': 'rs-actions' }, [
+            hint('MG1300 × DJI 一代 4G · v0.3.1')]), E('div', { 'class': 'rs-actions' }, [
             this.button('本机号码', function() { self.tab = 'settings'; self.draw(); return self.refresh().then(function() {
                 var input = self.page.querySelector('[aria-label="本机号码"]'); if (input) { input.scrollIntoView({block:'center'}); input.focus(); }
             }); }),
@@ -283,7 +283,10 @@ return view.extend({
                 if (value && !/^\+?[0-9]{3,20}$/.test(value)) { self.notify('请输入 3–20 位数字，可用 + 开头', true); return; }
                 self.execute(function() { return api.number(value); }, function(r) { self.ownNumber = r.own_number; self.numberDraft = r.own_number; self.notify('本机号码已保存'); });
             }, 'primary', true)]);
-        return E('div', {}, [numberCard, card(details), card([E('h3', {}, '实验电话控制'), E('label', { 'class': 'rs-check' }, [toggle, E('span', {}, '启用拨号、接听和挂断（无音频）')]),
+        return E('div', {}, [numberCard, card([E('h3', {}, 'AT 连通性测试'), hint('固定只读 AT 命令，经 ModemManager 执行。禁止 AT 的服务会显示真实错误，不会自动重启或修改配置。'),
+            this.button('测试 AT 并显示结果', function() { self.execute(function() { return api.at(); }, function(r) {
+                self.atResult = '命令：AT\n' + (r.ok ? '执行成功\n' + r.output : '执行失败\n' + r.error); self.draw();
+            }); }, 'primary', true), E('pre', {'style': 'white-space:pre-wrap;overflow-wrap:anywhere'}, self.atResult || '尚未测试')]), card(details), card([E('h3', {}, '实验电话控制'), E('label', { 'class': 'rs-check' }, [toggle, E('span', {}, '启用拨号、接听和挂断（无音频）')]),
             hint('开启时检测 ModemManager Voice 接口。接口可用不保证所有固件、SIM 或运营商都能实际通话。'),
             this.button('保存电话设置', function() { var value = toggle.checked; self.ask('保存电话设置', value ? '启用实验电话控制？拨号可能产生话费，浏览器无法听说。' : '关闭电话控制？',
                 function() { return api.voice(value); }, function() { if (self.device) self.device.voice_enabled = value; self.notify('电话设置已保存。'); }); }, 'primary', true)]),

@@ -2,6 +2,6 @@
   "luci-app-router-sms": {
     "description": "Read router SMS, modem and call status",
     "read": { "ubus": { "router.sms": [ "status", "messages", "calls", "device_status", "settings" ] } },
-    "write": { "ubus": { "router.sms": [ "send", "delete", "dial", "accept", "hangup", "device_setup", "set_voice", "set_number" ] } }
+    "write": { "ubus": { "router.sms": [ "at_test", "send", "delete", "dial", "accept", "hangup", "device_setup", "set_voice", "set_number" ] } }
   }
 }

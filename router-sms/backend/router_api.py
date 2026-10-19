@@ -8,11 +8,13 @@ import re
 import subprocess
 import socket
 import threading
+import secrets
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 LOCK = threading.Lock()
 CONFIG = {}
 PREFIX = '/org/freedesktop/ModemManager1/'
+INSTANCE_ID = secrets.token_hex(8)
 
 class ApiError(Exception):
     def __init__(self, status, message):
@@ -111,8 +113,24 @@ def dispatch(method, path, body):
         import router_setup
         try: CONFIG['modem'] = router_setup.resolve_modem()
         except RuntimeError as e: raise ApiError(409, str(e))
+    if method == 'POST' and path == '/v1/diagnostics/at':
+        if body: raise ApiError(400, 'AT test accepts no parameters')
+        try:
+            output = mm('-m', CONFIG['modem'], '--command=AT')
+            return {'ok': True, 'command': 'AT', 'output': output.strip() or '(empty response)', 'error': ''}
+        except ApiError as e:
+            return {'ok': False, 'command': 'AT', 'output': '', 'error': e.message, 'status': e.status}
     if method == 'GET' and path == '/v1/status':
         return {'modem': mm('-m', CONFIG['modem'], structured=True), 'voice': voice(), 'own_number': CONFIG.get('own_number', '')}
+    if method == 'GET' and path == '/v1/sms/index':
+        return {'generation': INSTANCE_ID + ':' + CONFIG['modem'],
+                'ids': [p.rsplit('/', 1)[1] for p in listed('SMS')]}
+    if method == 'GET' and path == '/v1/sms/item':
+        sms_id = body.get('id')
+        if not isinstance(sms_id, str) or not re.fullmatch(r'[0-9]{1,10}', sms_id): raise ApiError(400, 'Invalid SMS ID')
+        sms = PREFIX + 'SMS/' + sms_id
+        if sms not in listed('SMS'): raise ApiError(404, 'SMS does not belong to configured modem')
+        return {'id': sms_id, 'data': mm('-s', sms, structured=True)}
     if method == 'GET' and path == '/v1/sms':
         ids = listed('SMS')
         if body.get('order') == 'newest': ids.reverse()
@@ -200,6 +218,8 @@ class Handler(BaseHTTPRequestHandler):
                 try: body = json.loads(self.rfile.read(length))
                 except (ValueError, UnicodeError): raise ApiError(400, 'Invalid JSON')
                 if not isinstance(body, dict): raise ApiError(400, 'JSON object required')
+            elif parsed.path == '/v1/sms/item':
+                body['id'] = parse_qs(parsed.query).get('id', [''])[0]
             elif parsed.path == '/v1/sms':
                 try: body['offset'] = int(parse_qs(parsed.query).get('offset', ['0'])[0])
                 except ValueError: raise ApiError(400, 'Invalid offset')

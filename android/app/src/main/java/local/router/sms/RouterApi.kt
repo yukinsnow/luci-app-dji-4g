@@ -25,14 +25,14 @@ object RouterConfig {
     }
 }
 
-class RouterApi(var token: String = "") {
+class RouterApi(var token: String = "", private val readTimeoutMs: Int = 600000) {
     fun request(path: String, body: JSONObject? = null): JSONObject = requestWithReadRetry(body == null) { requestOnce(path, body) }
     private fun requestOnce(path: String, body: JSONObject?): JSONObject {
         check(token.matches(Regex("[a-f0-9]{64}"))) { "请先登录路由器" }
         val connection = URL("http://${RouterLogin.HOST}:8765/v1$path").openConnection(Proxy.NO_PROXY) as HttpURLConnection
         try {
             connection.connectTimeout = 8000
-            connection.readTimeout = 600000
+            connection.readTimeout = readTimeoutMs
             connection.instanceFollowRedirects = false
             connection.setRequestProperty("Connection", "close")
             connection.setRequestProperty("Authorization", "Bearer $token")

@@ -16,6 +16,10 @@ class RouterViewModel(application: Application): AndroidViewModel(application) {
     var trustedHost by mutableStateOf(identity.getString("known_host", "") ?: ""); private set
     var pendingHost by mutableStateOf(""); private set
     var pendingFingerprint by mutableStateOf(""); private set
+    var atResult by mutableStateOf<String?>(null); private set
+    fun testAt() = work({ api.request("/diagnostics/at", JSONObject()) }) {
+        atResult = "命令：AT\n" + if (it.optBoolean("ok")) "执行成功\n${it.optString("output")}" else "执行失败\n${it.optString("error")}"
+    }
     var ownNumber by mutableStateOf(""); private set
     private val store = SecureStore(application)
     private val api = RouterApi(store.load())
@@ -70,6 +74,9 @@ class RouterViewModel(application: Application): AndroidViewModel(application) {
     }
     fun logout() {
         if (busy) return
+        RouterNotificationService.stop(getApplication())
+        getApplication<Application>().getSystemService(android.app.NotificationManager::class.java).cancelAll()
+        getApplication<Application>().getSharedPreferences("notification-monitor", 0).edit().clear().apply()
         callsGeneration++; callTimings = emptyMap(); callPollError = null
         store.clear(); api.token = ""; connected = false; online = false; status = null; calls = null; messages = emptyList()
     }
@@ -84,6 +91,12 @@ class RouterViewModel(application: Application): AndroidViewModel(application) {
     }
     fun cancelIdentity() { pendingHost = ""; pendingFingerprint = "" }
     fun refreshNumber() = work({ api.request("/settings/number") }) { ownNumber = it.optString("own_number") }
+    fun enableNotifications() = work({ api.request("/sms/index") }) {
+        try {
+            RouterNotificationService.start(getApplication())
+            notice = "后台监听已开启。首次启动只建立短信基线；新短信与来电会显示通知。"
+        } catch (_: RuntimeException) { error = "无法启动后台监听，请回到 App 并检查通知权限后重试。" }
+    }
     fun saveNumber(value: String) = work({
         api.request("/settings/number", JSONObject().put("own_number", value.trim()))
     }) { ownNumber = it.optString("own_number"); notice = "本机号码已保存，LuCI 与安卓端共用。" }

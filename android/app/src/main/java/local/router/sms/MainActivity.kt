@@ -34,13 +34,27 @@ import top.yukonga.miuix.kmp.theme.*
 import org.json.JSONObject
 
 class MainActivity: ComponentActivity() {
+    private var notificationRoute by mutableStateOf<Pair<String, String>?>(null)
+    private fun receiveNotification(intent: android.content.Intent) {
+        val kind = intent.getStringExtra("open_kind") ?: return
+        if (kind !in listOf("sms", "calls", "settings")) return
+        notificationRoute = kind to (intent.getStringExtra("open_number") ?: "")
+        if (kind == "sms") {
+            getSharedPreferences("notification-monitor", 0).edit().putInt("pending_count", 0).apply()
+            getSystemService(android.app.NotificationManager::class.java).cancel(RouterNotificationService.SMS_ID)
+        }
+    }
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent); setIntent(intent); receiveNotification(intent)
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        receiveNotification(intent)
         window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         setContent {
             MiuixTheme(colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
-                RouterApp(viewModel())
+                RouterApp(viewModel(), notificationRoute) { notificationRoute = null }
             }
         }
     }
@@ -78,7 +92,7 @@ private val green = Color(0xFF20A477)
         visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None)
 }
 
-@Composable fun RouterApp(vm: RouterViewModel) {
+@Composable fun RouterApp(vm: RouterViewModel, notificationRoute: Pair<String, String>? = null, routeConsumed: () -> Unit = {}) {
     var tab by remember { mutableIntStateOf(0) }
     var recipient by remember { mutableStateOf<String?>(null) }
     var selecting by remember(recipient) { mutableStateOf(false) }
@@ -91,6 +105,17 @@ private val green = Color(0xFF20A477)
     val dialog = remember { mutableStateOf(false) }
     val errorDialog = remember { mutableStateOf(false) }
     val noticeDialog = remember { mutableStateOf(false) }
+    LaunchedEffect(notificationRoute, vm.connected) {
+        if (vm.connected && notificationRoute != null) {
+            composing = false; search = ""
+            when (notificationRoute.first) {
+                "sms" -> { tab = 0; recipient = notificationRoute.second.ifBlank { null }; vm.refreshAll() }
+                "calls" -> { tab = 1; recipient = null }
+                "settings" -> { tab = 3; recipient = null }
+            }
+            routeConsumed()
+        }
+    }
     val identityDialog = remember { mutableStateOf(false) }
     LaunchedEffect(vm.pendingHost) { identityDialog.value = vm.pendingHost.isNotEmpty() }
     LaunchedEffect(confirm) { dialog.value = confirm != null }
@@ -110,7 +135,7 @@ private val green = Color(0xFF20A477)
         !vm.connected -> "连接路由器"
         composing -> "新短信"
         recipient != null -> recipient!!
-        else -> listOf("短信", "电话", "设备", "连接")[tab]
+        else -> listOf("短信", "电话", "设备", "设置")[tab]
     }
     Scaffold(
         topBar = { TopAppBar(title = title, navigationIcon = {
@@ -123,7 +148,7 @@ private val green = Color(0xFF20A477)
         bottomBar = {
             if (vm.connected && recipient == null && !composing) NavigationBar(
                 items = listOf(NavigationItem("短信", Icons.Outlined.Email), NavigationItem("电话", Icons.Outlined.Phone),
-                    NavigationItem("设备", Icons.Outlined.Info), NavigationItem("连接", Icons.Outlined.Settings)),
+                    NavigationItem("设备", Icons.Outlined.Info), NavigationItem("设置", Icons.Outlined.Settings)),
                 selected = tab, onClick = { if (!vm.busy) tab = it }, showDivider = false)
         }
     ) { padding ->
@@ -235,6 +260,9 @@ private val green = Color(0xFF20A477)
                 3 -> item {
                     OwnNumberPane(vm)
                     Spacer(Modifier.height(12.dp))
+                    NotificationControls(vm)
+                    AtDiagnostics(vm)
+                    Spacer(Modifier.height(12.dp))
                     Panel {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                             RoundSymbol(Icons.Outlined.Lock, green)
@@ -248,7 +276,7 @@ private val green = Color(0xFF20A477)
                             confirm = "退出后需要重新输入路由器密码。是否继续？" to { vm.logout() }
                         }
                     }
-                    Spacer(Modifier.height(18.dp)); Hint("路由器短信 0.4.0\nCompose Miuix · 本地设备管理")
+                    Spacer(Modifier.height(18.dp)); Hint("路由器短信 0.5.0\nCompose Miuix · 本地设备管理")
                 }
             }
             if (vm.busy) item { Hint("正在与路由器通信，请稍候…", Modifier.padding(6.dp)) }

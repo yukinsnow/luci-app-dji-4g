@@ -5,6 +5,26 @@ import router_setup as setup
 
 class LuCITests(unittest.TestCase):
     def setUp(self): api.CONFIG = dict(modem='0', enable_voice=True)
+    def test_at_result_and_errors(self):
+        with patch('router_api.mm', return_value='OK\n') as mm:
+            result=api.dispatch('POST','/v1/diagnostics/at',{})
+            self.assertTrue(result['ok']); self.assertEqual(result['output'],'OK')
+            mm.assert_called_once_with('-m','0','--command=AT')
+        with patch('router_api.mm', side_effect=api.ApiError(502,'Unauthorized')):
+            self.assertEqual(api.dispatch('POST','/v1/diagnostics/at',{})['error'],'Unauthorized')
+        with patch('router_api.mm') as mm:
+            with self.assertRaises(api.ApiError): api.dispatch('POST','/v1/diagnostics/at',{'command':'AT+CFUN=0'})
+            mm.assert_not_called()
+    def test_notification_index_reads_no_bodies(self):
+        with patch('router_api.listed', return_value=[api.PREFIX+'SMS/2']), patch('router_api.mm') as mm:
+            result = api.dispatch('GET','/v1/sms/index',{})
+            self.assertEqual(result['ids'], ['2']);self.assertTrue(result['generation'])
+            mm.assert_not_called()
+    def test_notification_item_enforces_modem_ownership(self):
+        with patch('router_api.listed', return_value=[]), patch('router_api.mm') as mm:
+            with self.assertRaises(api.ApiError):api.dispatch('GET','/v1/sms/item',{'id':'9'})
+            with self.assertRaises(api.ApiError):api.dispatch('GET','/v1/sms/item',{'id':'1;reboot'})
+            mm.assert_not_called()
     def test_own_number_persist_and_clear_without_modem_or_token_change(self):
         api.CONFIG.update(token='a'*64, hardware_profile='mg1300-dji-gen1')
         with patch('router_setup.save_config') as save, patch('router_api.mm') as mm:
